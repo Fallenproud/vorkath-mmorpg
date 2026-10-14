@@ -1,284 +1,1327 @@
 import * as THREE from 'three'
-import type { Audio } from '../engine/audio'
+import crystalUrl from '../../assets/models/crystal_cluster.glb?url'
+import frondUrl from '../../assets/models/frondtree.glb?url'
+import pylonUrl from '../../assets/models/lifecore_pylon.glb?url'
+import grazerUrl from '../../assets/models/mossgrazer.glb?url'
+import podUrl from '../../assets/models/landing_pod.glb?url'
+import type { Assets } from '../engine/assets'
+import type { AudioEngine } from '../engine/audio'
 import type { Input } from '../engine/input'
 import { Physics, RAPIER } from '../engine/physics'
 import type { Renderer } from '../engine/renderer'
-import type { Quality } from '../engine/save'
-import { FollowCamera } from './camera'
-import { Collectibles } from './collectibles'
+import { QUALITY_PRESETS } from '../engine/renderer'
+import type { SaveStore, Settings } from '../engine/save'
+import { clamp, smooth } from '../engine/noise'
+import { Atmosphere } from './atmosphere'
+import { CameraRig, type Shot } from './camera'
+import { Cinematics, emptyOut, OPENING_HANDOVER, OPENING_SECONDS, TEASER_SECONDS, type CineOut, type ViewState } from './cinematics'
 import { CONFIG } from './config'
-import { tuning } from './tuning'
-import { Drones } from './drones'
-import { Effects } from './fx'
-import { Player, type PlayerEvent } from './player'
-import { collect, createRun, damage, tick, type RunState } from './rules'
-import { World } from './world'
+import { DISCOVERY_BY_ID, DISCOVERIES, type Discovery } from './discoveries'
+import { Explorer } from './explorer'
+import { Flora } from './flora'
+import { Creatures } from './creatures'
+import { extractModel } from './gfx'
+import { getHeightField, type HeightField } from './heightfield'
+import { POI, POI_NAMES, regionAt, type RegionId } from './layout'
+import { OrbitScene } from './orbit'
+import { Props, VENT_RADIUS, type ModelSet, type Pickup } from './props'
+import { buildScannables, pickTarget, type ReadCtx, type Scannable } from './scannables'
+import { Lighting, SkyDome } from './sky'
+import { advance, defaultProgress, has, nodeCount, objectiveFor, STAGES, type Objective, type Progress, type Stage } from './state'
+import { createTerrain } from './terrain'
+import { U } from './uniforms'
+import { Veins } from './veins'
+import { Water } from './water'
 
-export type Mode = 'attract' | 'playing' | 'paused' | 'ended'
-export type Hint = 'move' | 'look' | 'jump' | 'dash' | 'cores'
-export type Compass = { angle: number; distance: number; rise: number }
+export type Mode = 'boot' | 'title' | 'opening' | 'playing' | 'paused' | 'teaser'
 
-export type GameHooks = {
-  popup(text: string, screen: { x: number; y: number }, kind: 'score' | 'hurt'): void
-  hurt(): void
-  hint(hint: Hint | null): void
-  /** The first-run tutorial reached its last step. */
-  tutorialDone(): void
-  end(run: RunState): void
+export interface GameEvents {
+  toast(text: string, kind?: 'info' | 'discovery' | 'warn' | 'objective'): void
+  discovery(d: Discovery, isNew: boolean, readings: [string, string][]): void
+  objectiveChanged(o: Objective): void
+  complete(): void
+  /** The pause key was pressed in a playable state; main decides what to close/open. */
+  pauseKey(): void
+  helpKey(): void
+  journalToggled(open: boolean): void
+  teaserEnded(): void
+  region(name: string): void
 }
 
-/**
- * One playable scene: owns world, physics, player, camera, enemies and the run rules, and
- * translates simulation events into audio, particles and UI hooks. `main.ts` drives it from the
- * fixed-step loop; the UI never reaches inside.
- */
+export interface Tag {
+  x: number
+  y: number
+  label: string
+  known: boolean
+  dist: number
+}
+
+export interface Hud {
+  mode: Mode
+  objective: Objective
+  prompt: { text: string; key: string; hold: number | null; blocked: boolean } | null
+  integrity: number
+  shards: number
+  ore: number
+  nodes: number
+  vitality: number
+  discoveries: number
+  scanner: { active: boolean; state: 'idle' | 'target' | 'scanning'; label: string; dist: number; progress: number; known: boolean }
+  tags: Tag[]
+  waypoint: { x: number; y: number; behind: boolean; dist: number; label: string } | null
+  caption: CineOut['caption']
+  haze: number
+  black: number
+  flash: number
+  hurt: number
+  yaw: number
+  bearing: number | null
+  skipVisible: boolean
+  survey: boolean
+  walk: boolean
+  teaser: { time: number; duration: number; paused: boolean } | null
+  speed: number
+  region: string | null
+  hidden: boolean
+}
+
+interface Ripple {
+  mesh: THREE.Mesh
+  t: number
+  dur: number
+  max: number
+  active: boolean
+  flat: boolean
+}
+
+const stageIndex = (s: Stage) => (STAGES as readonly Stage[]).indexOf(s)
+
+const QUALITY_DENSITY = {
+  low: { flora: 0.4, atmo: 0.4 },
+  medium: { flora: 0.7, atmo: 0.7 },
+  high: { flora: 1, atmo: 1 },
+} as const
+
 export class Game {
-  mode: Mode = 'attract'
-  run: RunState
+  readonly scene = new THREE.Scene()
+  readonly physics = new Physics()
+  readonly hf: HeightField = getHeightField()
+  mode: Mode = 'boot'
+  progress: Progress = defaultProgress()
+  readonly view: ViewState = { vit: 0, act: 0, hold: 0, nodes: [false, false, false], pulse: 0 }
+  readonly hud: Hud
+  time = 0
+  journalOpen = false
+  scanMode = false
+  survey = false
+  walkMode = false
   reducedMotion = false
-  private readonly physics: Physics
-  private readonly world: World
-  private readonly player: Player
-  private readonly cam: FollowCamera
-  private readonly cores: Collectibles
-  private readonly drones: Drones
-  private readonly fx = new Effects()
-  private simTime = 0
-  private time = 0
-  private tutorial: Hint | null = null
-  private tutorialStart = new THREE.Vector3()
-  private readonly down = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
+
+  private camRig!: CameraRig
+  private lighting!: Lighting
+  private sky!: SkyDome
+  private water!: Water
+  private veins!: Veins
+  private props!: Props
+  private flora!: Flora
+  private creatures!: Creatures
+  private atmosphere!: Atmosphere
+  private explorer!: Explorer
+  private readonly orbit = new OrbitScene()
+  private cine!: Cinematics
+  private scannables: Scannable[] = []
+  private models: ModelSet = {}
+  private readonly ripples: Ripple[] = []
+  private readonly spawn = new THREE.Vector3()
+  private readonly lastSafe = new THREE.Vector3()
+  private lastSafeYaw = 0
+  private safeTimer = 0
+  private floraDensity = -1
+  private fill!: THREE.DirectionalLight
+
+  private cineT = 0
+  private cineOut: CineOut = emptyOut()
+  private teaserPaused = false
+  private readonly teaserFired = new Set<string>()
+  private readonly shotSrc: Shot = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 60 }
+
+  private lock: { s: Scannable; pos: THREE.Vector3; dist: number } | null = null
+  private scanProgress = 0
+  private scanSoundClock = 0
+  private holdProgress = 0
+  private integrity = 100
+  private invuln = 0
+  private hurtFlash = 0
+  private flash = 0
+  private pulseT = -1
+  private fadeBlack = 0
+  private fadeTarget = 0
+  private regionNow: RegionId | null = null
+  private saveClock = 0
+  private ambClock = 0
+  private wading = 0
+  private speedNow = 0
+  private captureWanted: ((url: string) => void) | null = null
+  private lastObjectiveTitle = ''
 
   constructor(
     private readonly renderer: Renderer,
     private readonly input: Input,
-    private readonly audio: Audio,
-    private readonly hooks: GameHooks,
+    private readonly audio: AudioEngine,
+    private readonly store: SaveStore,
+    private readonly events: GameEvents,
   ) {
-    this.physics = new Physics(CONFIG.player.gravity)
-    this.world = new World(this.physics, renderer.shadowMapSize)
-    this.player = new Player(this.physics, this.world.spawn, this.world.movers)
-    this.cam = new FollowCamera(this.physics, this.player.collider)
-    this.cores = new Collectibles(this.world.coreSpots)
-    this.drones = new Drones(this.physics, this.world.droneRoutes)
-    this.world.scene.add(this.player.root, this.player.shadowMesh, this.cores.group, this.drones.group, this.fx.mesh)
-    this.run = createRun(this.cores.total)
-    this.cam.reset(this.world.spawn, 0.6)
+    this.hud = {
+      mode: 'boot', objective: objectiveFor(this.progress), prompt: null, integrity: 100, shards: 0, ore: 0, nodes: 0, vitality: 0, discoveries: 0,
+      scanner: { active: false, state: 'idle', label: '', dist: 0, progress: 0, known: false }, tags: [], waypoint: null, caption: null,
+      haze: 0, black: 1, flash: 0, hurt: 0, yaw: 0, bearing: null, skipVisible: false, survey: false, walk: false, teaser: null, speed: 0, region: null, hidden: true,
+    }
   }
 
-  get camera(): THREE.PerspectiveCamera {
-    return this.cam.camera
+  // ------------------------------------------------------------------------------------------
+  // Construction
+  // ------------------------------------------------------------------------------------------
+  async init(assets: Assets): Promise<void> {
+    const load = async (url: string) => {
+      try {
+        const gltf = await assets.gltf(url)
+        return extractModel(gltf.scene)
+      } catch (err) {
+        console.warn('Model failed to load, using procedural fallback:', url, err)
+        return null
+      }
+    }
+    const [crystal, pylon, frond, grazer, pod] = await Promise.all([load(crystalUrl), load(pylonUrl), load(frondUrl), load(grazerUrl), load(podUrl)])
+    this.models = {
+      crystal: crystal ?? undefined, pylon: pylon ?? undefined, frond: frond ?? undefined, grazer: grazer ?? undefined, pod: pod ?? undefined,
+    }
+    this.build()
   }
 
-  /** Begin (or restart) a run. `tutorial` shows first-time control hints. */
-  start(tutorial: boolean): void {
-    tuning.activate('run')
-    this.cores.reset()
-    this.fx.clear()
-    this.player.teleport(this.world.spawn)
-    this.player.facing = 0
-    this.cam.pitch = 0.42
-    this.cam.reset(this.world.spawn, 0)
-    this.run = { ...createRun(this.cores.total), unranked: tuning.unranked }
-    this.mode = 'playing'
-    this.input.endFrame()
-    this.input.takeLook()
-    this.tutorial = tutorial ? 'move' : null
-    this.tutorialStart.copy(this.world.spawn)
-    this.hooks.hint(this.tutorial)
+  private build(): void {
+    const settings = this.store.data.settings
+    const preset = QUALITY_PRESETS[settings.quality]
+    const scene = this.scene
+    scene.background = new THREE.Color('#2a0f0c')
+    this.lighting = new Lighting(scene, preset.shadowMap, preset.shadows)
+    this.fill = new THREE.DirectionalLight('#ffd6c2', 0.55)
+    scene.add(this.fill, this.fill.target)
+    this.sky = new SkyDome()
+    scene.add(this.sky.mesh)
+    scene.add(createTerrain(this.hf, this.physics))
+    this.water = new Water(this.hf)
+    scene.add(this.water.group)
+    this.veins = new Veins(this.hf)
+    scene.add(this.veins.group)
+    this.props = new Props(this.hf, this.physics, this.models)
+    scene.add(this.props.group)
+    const dens = QUALITY_DENSITY[settings.quality]
+    this.flora = new Flora(this.hf, this.models, dens.flora)
+    this.floraDensity = dens.flora
+    scene.add(this.flora.group)
+    this.creatures = new Creatures(this.hf, this.models.grazer, 5)
+    scene.add(this.creatures.group)
+    this.atmosphere = new Atmosphere(this.veins.mainPath, dens.atmo)
+    scene.add(this.atmosphere.group)
+
+    const sp = POI.arrival
+    this.spawn.set(sp.x, this.hf.heightAt(sp.x, sp.z), sp.z)
+    this.lastSafe.copy(this.spawn)
+    this.explorer = new Explorer(this.physics, this.spawn)
+    this.physics.bind(this.explorer.body, this.explorer.root)
+    scene.add(this.explorer.root)
+    this.explorer.events.onFootstep = speed => {
+      if (this.mode !== 'playing' && this.mode !== 'teaser') return
+      this.audio.footstep(speed, this.wading > 0.12 ? 'water' : this.groundCover() > 0.5 ? 'moss' : 'rock')
+      if (this.wading > 0.12) this.atmosphere.burst(this.explorer.root.position.clone().setY(U.uWaterY.value + 0.1), { count: 4, color: '#bfe8e2', speed: 1.4, life: 0.5, up: 1.2, gravity: 6 })
+    }
+    this.explorer.events.onJump = () => {
+      this.audio.jump()
+      if (this.mode === 'playing') this.progress.tutorial.jumped = true
+    }
+    this.explorer.events.onLand = impact => {
+      this.audio.land(impact)
+      if (impact > 6) {
+        const p = this.explorer.root.position.clone().setY(this.explorer.feetY + 0.1)
+        this.atmosphere.burst(p, { count: Math.min(24, Math.round(impact * 1.4)), color: this.groundCover() > 0.5 ? '#9ec47a' : '#b88466', speed: 2.2, life: 0.8, up: 0.8, gravity: 6, spread: 0.6 })
+        if (impact > 13 && !this.reducedMotion) this.camRig.shake(0.35)
+      }
+    }
+    this.camRig = new CameraRig(this.physics, window.innerWidth / Math.max(1, window.innerHeight))
+    this.camRig.setIgnoredBody(this.explorer.body)
+
+    this.cine = new Cinematics({ hf: this.hf, props: this.props, path: this.veins.mainPath })
+    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures })
+
+    const ringGeo = new THREE.RingGeometry(0.9, 1, 64)
+    for (let i = 0; i < 8; i += 1) {
+      const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: '#35f2d2', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }))
+      m.visible = false
+      m.renderOrder = 6
+      this.scene.add(m)
+      this.ripples.push({ mesh: m, t: 0, dur: 1, max: 1, active: false, flat: true })
+    }
+    this.applySettings(settings)
+    this.applyProgressToWorld(this.store.data.progress ?? defaultProgress(), false)
+    this.camRig.camera.position.set(this.spawn.x + 8, this.spawn.y + 4, this.spawn.z + 12)
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Settings / quality
+  // ------------------------------------------------------------------------------------------
+  applySettings(s: Settings): void {
+    this.input.sensitivity = s.sensitivity
+    this.input.invertY = s.invertY
+    CONFIG.camera.fov = s.fov
+    this.reducedMotion = s.reducedMotion
+    this.audio.setVolumes({ master: s.master, music: s.music, sfx: s.sfx, ambience: s.ambience, muted: s.muted })
+    if (!this.camRig) return
+    this.renderer.applyQuality(s.quality)
+    this.lighting.setShadows(QUALITY_PRESETS[s.quality].shadows, this.renderer.shadowMapSize)
+    const dens = QUALITY_DENSITY[s.quality]
+    if (this.floraDensity !== dens.flora) this.rebuildQualityObjects(dens)
+  }
+
+  private rebuildQualityObjects(dens: { flora: number; atmo: number }): void {
+    const dispose = (g: THREE.Object3D) => {
+      g.traverse(o => {
+        const m = o as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+      })
+    }
+    this.scene.remove(this.flora.group)
+    dispose(this.flora.group)
+    this.flora = new Flora(this.hf, this.models, dens.flora)
+    this.scene.add(this.flora.group)
+    this.scene.remove(this.atmosphere.group)
+    dispose(this.atmosphere.group)
+    this.atmosphere = new Atmosphere(this.veins.mainPath, dens.atmo)
+    this.scene.add(this.atmosphere.group)
+    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures })
+    this.floraDensity = dens.flora
+  }
+
+  /** Apply a progress snapshot to every visual and gameplay object. */
+  applyProgressToWorld(p: Progress, teleport: boolean): void {
+    this.progress = p
+    this.view.vit = p.vitality
+    this.view.nodes = [...p.nodes] as [boolean, boolean, boolean]
+    this.view.act = p.stabilized ? 1 : nodeCount(p) * 0.28
+    this.view.hold = 0
+    this.view.pulse = 0
+    for (const pk of this.props.pickups) pk.collected = p.shardsFound.includes(pk.id) || p.oreFound.includes(pk.id)
+    for (let i = 0; i < 3; i += 1) this.props.setNodeVisual(i, p.nodes[i], false)
+    U.uVit.value = this.view.vit
+    U.uAct.value = this.view.act
+    U.uPulse.value = 0
+    this.water.update(this.view.vit, this.hf)
+    if (teleport) {
+      const pos = p.pos ? new THREE.Vector3(p.pos[0], p.pos[1], p.pos[2]) : this.spawn.clone()
+      this.explorer.teleport(pos.x, pos.y, pos.z, p.yaw)
+      this.lastSafe.copy(pos)
+      this.lastSafeYaw = p.yaw
+      this.camRig.snapBehind(p.yaw)
+      this.camRig.pitch = 0.22
+    }
+    this.lastObjectiveTitle = ''
+  }
+
+  private groundCover(): number {
+    const p = this.explorer.root.position
+    const dBasin = Math.hypot(p.x - POI.basin.x, p.z - POI.basin.z)
+    const dCore = Math.hypot(p.x - POI.core.x, p.z - POI.core.z)
+    const v = this.view.vit
+    return Math.max(smooth(0, 34, v * 190 - dBasin), smooth(0, 26, v * 105 - dCore))
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Lifecycle
+  // ------------------------------------------------------------------------------------------
+  private readonly shotFn = (_t: number, out: Shot): void => {
+    out.pos.copy(this.shotSrc.pos)
+    out.look.copy(this.shotSrc.look)
+    out.fov = this.shotSrc.fov
+  }
+
+  private transitionCb: (() => void) | null = null
+
+  /** Fade to black, run `cb` at full black, then fade back in. */
+  private transition(cb: () => void): void {
+    if (this.transitionCb) return
+    this.transitionCb = cb
+    this.fadeTarget = 1
+  }
+
+  get frozen(): boolean {
+    return this.mode !== 'playing' || this.journalOpen
+  }
+
+  get hasSave(): boolean {
+    return this.store.hasProgress()
+  }
+
+  get isPlaying(): boolean {
+    return this.mode === 'playing'
+  }
+
+  private setMode(m: Mode): void {
+    this.mode = m
+    this.hud.mode = m
+    this.input.enabled = m === 'playing' && !this.journalOpen
+    this.hud.hidden = m !== 'playing' && m !== 'paused'
+  }
+
+  enterTitle(): void {
+    this.setMode('title')
+    this.scanMode = false
+    this.survey = false
+    this.journalOpen = false
+    this.camRig.exitSurvey()
+    this.audio.holdTone(null)
+    this.applyProgressToWorld(this.store.data.progress ?? defaultProgress(), false)
+    this.explorer.teleport(this.spawn.x, this.spawn.y, this.spawn.z, 0.2)
+    this.explorer.setScanning(false)
+    this.cineT = 0
+    this.camRig.playShot(this.shotFn, 0.01, true)
+    this.audio.setMusic(true)
+    this.hud.black = 0
+  }
+
+  newGame(): void {
+    this.store.clearProgress()
+    const p = defaultProgress()
+    this.integrity = 100
+    this.applyProgressToWorld(p, true)
+    this.holdProgress = 0
+    this.pulseT = -1
+    this.startOpening()
+  }
+
+  private startOpening(): void {
+    this.setMode('opening')
+    this.cineT = 0
+    this.scanMode = false
+    this.explorer.teleport(this.spawn.x, this.spawn.y, this.spawn.z, 0)
+    this.explorer.setScanning(false)
+    this.camRig.playShot(this.shotFn, 0.01, true)
+    this.audio.setMusic(true)
+    this.audio.riser(7)
+    this.audio.whoosh(5, 0.1)
+    this.hud.skipVisible = true
+  }
+
+  continueGame(): void {
+    const saved = this.store.data.progress
+    if (!saved) {
+      this.newGame()
+      return
+    }
+    this.integrity = 100
+    this.transition(() => {
+      this.applyProgressToWorld(saved, true)
+      this.pulseT = -1
+      this.holdProgress = 0
+      this.camRig.stopShot(0, true)
+      this.setMode('playing')
+      this.afterEnterPlay()
+      this.events.toast(`Welcome back. ${this.hud.objective.title}`, 'objective')
+    })
+  }
+
+  private afterEnterPlay(): void {
+    this.hud.skipVisible = false
+    this.hud.caption = null
+    this.hud.haze = 0
+    this.audio.setMusic(true)
+    this.input.enabled = !this.journalOpen
+    this.regionNow = null
+    this.lastObjectiveTitle = ''
+  }
+
+  skipCinematic(): void {
+    if (this.mode === 'opening') {
+      this.transition(() => {
+        this.hud.skipVisible = false
+        this.camRig.snapBehind(0)
+        this.camRig.stopShot(0, true)
+        this.setMode('playing')
+        this.afterEnterPlay()
+        this.saveNow()
+      })
+    } else if (this.mode === 'teaser') {
+      this.exitTeaser()
+    }
+  }
+
+  private finishOpening(): void {
+    this.hud.skipVisible = false
+    this.camRig.snapBehind(0)
+    this.camRig.stopShot(1.6)
+    this.setMode('playing')
+    this.afterEnterPlay()
+    this.saveNow()
+    this.events.toast('Control is yours. Follow the objective in the top-left.', 'objective')
   }
 
   pause(): void {
-    if (this.mode === 'playing') this.mode = 'paused'
+    if (this.mode !== 'playing') return
+    this.setMode('paused')
+    this.audio.holdTone(null)
+    this.holdProgress = 0
+    this.saveNow()
   }
 
   resume(): void {
     if (this.mode !== 'paused') return
-    this.mode = 'playing'
-    this.input.endFrame()
-    this.input.takeLook()
+    this.setMode('playing')
   }
 
   toTitle(): void {
-    this.mode = 'attract'
-    this.hooks.hint(null)
-  }
-
-  setQuality(quality: Quality): void {
-    this.renderer.applyQuality(quality)
-    const size = this.renderer.shadowMapSize
-    const shadow = this.world.sun.shadow
-    shadow.map?.dispose()
-    shadow.map = null
-    shadow.mapSize.set(size, size)
-    // Shadow support is compiled into shaders: recompile after toggling shadows at runtime.
-    this.world.scene.traverse(obj => {
-      const material = (obj as THREE.Mesh).material
-      for (const m of Array.isArray(material) ? material : material ? [material] : []) m.needsUpdate = true
+    if (this.mode === 'playing' || this.mode === 'paused') this.saveNow()
+    this.transition(() => {
+      this.enterTitle()
+      this.hud.skipVisible = false
+      this.events.teaserEnded()
     })
   }
 
+  startTeaser(): void {
+    this.setMode('teaser')
+    this.cineT = 0
+    this.teaserPaused = false
+    this.teaserFired.clear()
+    this.scanMode = false
+    this.journalOpen = false
+    this.survey = false
+    this.camRig.exitSurvey()
+    this.explorer.setScanning(false)
+    this.camRig.playShot(this.shotFn, 0.01, true)
+    this.audio.setMusic(true)
+    this.audio.holdTone(null)
+    this.hud.skipVisible = true
+  }
+
+  restartTeaser(): void {
+    this.cineT = 0
+    this.teaserPaused = false
+    this.teaserFired.clear()
+    this.view.pulse = 0
+  }
+
+  toggleTeaserPause(): boolean {
+    this.teaserPaused = !this.teaserPaused
+    return this.teaserPaused
+  }
+
+  get teaserIsPaused(): boolean {
+    return this.teaserPaused
+  }
+
+  exitTeaser(): void {
+    this.transition(() => {
+      this.hud.skipVisible = false
+      this.hud.caption = null
+      this.hud.teaser = null
+      this.hud.haze = 0
+      this.view.pulse = 0
+      U.uPulse.value = 0
+      // Restore the real world state after the scripted one.
+      this.applyProgressToWorld(this.store.data.progress ?? defaultProgress(), false)
+      this.explorer.teleport(this.spawn.x, this.spawn.y, this.spawn.z, 0.2)
+      this.enterTitle()
+      this.events.teaserEnded()
+    })
+  }
+
+  captureStill(cb: (dataUrl: string) => void): void {
+    this.captureWanted = cb
+  }
+
+  openJournal(): void {
+    if (this.mode !== 'playing' || this.journalOpen) return
+    this.journalOpen = true
+    this.scanMode = false
+    this.input.enabled = false
+    this.audio.holdTone(null)
+    this.audio.uiOpen()
+    this.events.journalToggled(true)
+  }
+
+  closeJournal(): void {
+    if (!this.journalOpen) return
+    this.journalOpen = false
+    this.input.enabled = this.mode === 'playing'
+    this.audio.uiClose()
+    this.events.journalToggled(false)
+  }
+
+  /** Return to the last safe position (pause menu "stuck" helper). */
+  returnToSafe(): void {
+    this.transition(() => {
+      this.explorer.teleport(this.lastSafe.x, this.lastSafe.y, this.lastSafe.z, this.lastSafeYaw)
+      this.camRig.snapBehind(this.lastSafeYaw)
+      this.audio.respawn()
+    })
+  }
+
+  eraseSave(): void {
+    this.store.clearProgress()
+    this.applyProgressToWorld(defaultProgress(), false)
+  }
+
+  saveNow(): void {
+    if (this.mode === 'title' || this.mode === 'boot' || this.mode === 'teaser') return
+    const p = this.progress
+    p.pos = [this.lastSafe.x, this.lastSafe.y, this.lastSafe.z]
+    p.yaw = this.mode === 'opening' ? 0 : this.camRig.yaw
+    this.store.saveProgress(p)
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Fixed simulation step
+  // ------------------------------------------------------------------------------------------
+  private intent = {
+    dirX: 0, dirZ: 0, magnitude: 0, sprint: false, walk: false, jumpPressed: false, jumpHeld: false, speedScale: 1, faceYaw: null as number | null, frozen: true,
+  }
+
   step(dt: number): void {
-    this.simTime += dt
-    // Presses are always consumed so a jump pressed in a menu never fires on resume.
-    const jumpPressed = this.input.consume('jump')
-    const dashPressed = this.input.consume('dash')
-    const playing = this.mode === 'playing'
-    const rage = playing && this.run.timeLeft <= CONFIG.drones.rageAt
-
-    this.world.stepMovers(this.simTime)
-    const events: PlayerEvent[] = []
-    if (playing) {
-      this.player.step(
-        dt,
-        {
-          moveX: this.input.move.x,
-          moveY: this.input.move.y,
-          sprint: this.input.held('sprint'),
-          jumpPressed,
-          jumpHeld: this.input.held('jump'),
-          dashPressed,
-        },
-        this.cam.yaw,
-        events,
-      )
-    }
-    this.drones.step(dt, rage)
-    this.physics.step(dt)
-    if (!playing) return
-    this.run.unranked ||= tuning.unranked
-
-    const pos = this.player.position
-    for (const e of events) this.onPlayerEvent(e, pos)
-
-    for (const at of this.cores.collect(pos, CONFIG.player.radius + 0.75)) {
-      const result = collect(this.run)
-      this.run = result.state
-      this.audio.play('pickup')
-      this.fx.burst(at, '#ffd35c', 26, 7)
-      const combo = this.run.combo > 1 ? `  ×${this.run.combo}` : ''
-      this.hooks.popup(`+${result.points}${combo}`, this.project(at), 'score')
-      if (this.tutorial === 'cores') {
-        this.advanceTutorial(null)
-        this.hooks.tutorialDone()
-      }
-    }
-
-    const hitFrom = this.drones.hits(pos, CONFIG.player.radius)[0]
-    if (hitFrom) {
-      const result = damage(this.run)
-      if (result.hurt) {
-        this.run = result.state
-        this.player.knockback(hitFrom)
-        this.onHurt(pos)
-      }
-    }
-
-    if (pos.y < CONFIG.run.killY) {
-      this.run = damage(this.run, true).state
-      this.onHurt(pos)
-      if (this.run.phase === 'playing') {
-        this.player.teleport(this.player.safe)
-        this.cam.reset(this.player.safe)
-      }
-    }
-
-    this.run = tick(this.run, dt)
-    this.updateTutorial(pos)
-    if (this.run.phase !== 'playing') {
-      this.mode = 'ended'
-      this.hooks.hint(null)
-      this.audio.play(this.run.phase === 'won' ? 'win' : 'lose')
-      if (this.run.phase === 'won') this.fx.burst(pos.clone().setY(pos.y + 1), '#7ef9ff', 60, 10)
-      this.hooks.end(this.run)
+    if (this.mode === 'playing' && !this.journalOpen) {
+      this.intent.jumpPressed = this.input.consume('jump')
+      this.intent.jumpHeld = this.input.held('jump')
+      this.explorer.step(dt, this.intent)
+      this.physics.step(dt)
+    } else if (this.mode === 'title' || this.mode === 'opening' || this.mode === 'teaser') {
+      this.physics.step(dt)
     }
   }
+
+  // ------------------------------------------------------------------------------------------
+  // Per-frame update
+  // ------------------------------------------------------------------------------------------
+  private readonly tmpV = new THREE.Vector3()
+  private readonly tmpV2 = new THREE.Vector3()
+  private readonly tmpDir = new THREE.Vector3()
+  private readonly feet = new THREE.Vector3()
+  private scanCooldown = 0
+  private missClock = 0
 
   render(alpha: number, frameSeconds: number): void {
-    this.time += frameSeconds
-    this.physics.sync(alpha)
-    const target = this.player.root.position
-    if (this.mode === 'attract') {
-      // Slow establishing orbit around the archipelago; the title menu sits on the left third.
-      const t = this.time * 0.045 + 0.9
-      const cam = this.cam.camera
-      cam.position.set(Math.sin(t) * 34, 15 + Math.sin(this.time * 0.2) * 1.5, -8 + Math.cos(t) * 34)
-      cam.lookAt(Math.sin(t + 1.9) * 6, 3, -8 + Math.cos(t + 1.9) * 6)
-    } else {
-      const look = this.mode === 'playing' ? this.input.takeLook() : { x: 0, y: 0 }
-      if (this.mode === 'playing' && this.tutorial === 'look' && Math.abs(look.x) + Math.abs(look.y) > 0.05) this.advanceTutorial('jump')
-      this.cam.update(target, look, frameSeconds, false, this.reducedMotion)
+    const dt = Math.min(frameSeconds, 0.1)
+    this.input.update()
+    this.time += dt
+    U.uTime.value = this.time
+    switch (this.mode) {
+      case 'title': this.updateTitle(dt); break
+      case 'opening': this.updateOpening(dt); break
+      case 'teaser': this.updateTeaser(dt); break
+      case 'playing': this.updatePlaying(dt); break
+      default: break
     }
-    this.player.animate(frameSeconds, this.time, this.run.invulnerable > 0 && this.mode === 'playing', this.groundBelow(target))
-    this.cores.animate(frameSeconds)
-    this.drones.animate(frameSeconds, this.mode === 'playing' && this.run.timeLeft <= CONFIG.drones.rageAt)
-    this.fx.update(frameSeconds)
-    this.world.update(frameSeconds, target)
-    this.renderer.render(this.world.scene, this.cam.camera)
+    this.updateFade(dt)
+    this.physics.sync(alpha)
+    this.updateVisuals(dt)
+    this.updateCameraAndDraw(dt)
+    this.input.endFrame()
   }
 
-  /** Direction to the nearest remaining core relative to the camera (HUD compass). */
-  compass(): Compass | null {
-    const pos = this.player.root.position
-    let best: THREE.Vector3 | undefined
-    let bestD = Infinity
-    for (const c of this.cores.remaining()) {
-      const d = c.distanceToSquared(pos)
-      if (d < bestD) {
-        bestD = d
-        best = c
+  private updateFade(dt: number): void {
+    const target = this.fadeTarget
+    this.fadeBlack += clamp(target - this.fadeBlack, -dt * 2.2, dt * 4)
+    if (this.transitionCb && this.fadeBlack >= 0.99) {
+      const cb = this.transitionCb
+      this.transitionCb = null
+      this.fadeTarget = 0
+      cb()
+    }
+    this.hud.black = Math.max(this.fadeBlack, this.mode === 'opening' || this.mode === 'teaser' ? this.cineOut.black : 0)
+  }
+
+  private updateTitle(dt: number): void {
+    this.cineT += dt
+    this.cine.title(this.cineT, this.shotSrc, this.spawn)
+    this.hud.caption = null
+    this.hud.haze = 0
+    this.cineOut.phase = 'world'
+    this.cineOut.black = 0
+  }
+
+  private fireOnce(key: string, fn: () => void): void {
+    if (this.teaserFired.has(key)) return
+    this.teaserFired.add(key)
+    fn()
+  }
+
+  private updateOpening(dt: number): void {
+    this.cineT += dt
+    const t = Math.min(this.cineT, OPENING_SECONDS + 3)
+    this.cine.opening(t, this.cineOut, this.spawn)
+    this.copyShot()
+    this.hud.caption = this.cineOut.caption
+    this.hud.haze = this.cineOut.haze
+    if (this.cineT > 9.55) this.fireOnce('o-impact', () => { this.audio.boom(); this.audio.whoosh(3, 0.2) })
+    if (this.cineT >= OPENING_HANDOVER && this.mode === 'opening' && !this.transitionCb) this.finishOpening()
+  }
+
+  private copyShot(): void {
+    this.shotSrc.pos.copy(this.cineOut.shot.pos)
+    this.shotSrc.look.copy(this.cineOut.shot.look)
+    this.shotSrc.fov = this.cineOut.shot.fov
+  }
+
+  private updateTeaser(dt: number): void {
+    if (!this.teaserPaused) this.cineT += dt
+    const t = Math.min(this.cineT, TEASER_SECONDS)
+    this.cine.teaser(t, this.cineOut)
+    const out = this.cineOut
+    this.copyShot()
+    this.hud.caption = out.caption
+    this.hud.haze = out.haze
+    const v = out.view
+    if (v) {
+      this.view.vit = v.vit ?? 0
+      this.view.act = v.act ?? 0
+      this.view.hold = v.hold ?? 0
+      this.view.nodes = (v.nodes ?? [false, false, false]) as [boolean, boolean, boolean]
+      this.view.pulse = v.pulse ?? 0
+    }
+    const e = out.explorer
+    if (e) {
+      this.explorer.root.visible = true
+      const yaw = this.explorer.yaw
+      const d = Math.atan2(Math.sin(e.yaw - yaw), Math.cos(e.yaw - yaw))
+      this.explorer.teleport(e.pos.x, e.pos.y, e.pos.z, e.speed > 0.1 ? yaw + d * Math.min(1, dt * 9) : yaw + d * Math.min(1, dt * 4))
+      this.explorer.speedH = this.teaserPaused ? 0 : e.speed
+      this.explorer.grounded = true
+      if (e.reach) this.fireOnce(`reach${Math.floor(t)}`, () => this.explorer.reach())
+    } else {
+      this.explorer.root.visible = false
+    }
+    this.speedNow = this.explorer.speedH
+    if (t > 0.3) this.fireOnce('t-open', () => { this.audio.riser(6); this.audio.whoosh(4, 0.12) })
+    if (t > 6.3) this.fireOnce('t-dive', () => { this.audio.boom(); this.audio.whoosh(3, 0.18) })
+    for (const ev of out.events) {
+      if (ev.startsWith('seat')) {
+        const i = Number(ev.slice(4))
+        this.fireOnce(ev, () => {
+          this.audio.seat()
+          const n = this.props.nodes[i]
+          this.atmosphere.burst(n.pos.clone().setY(n.pos.y + 1.5), { count: 40, color: '#35f2d2', speed: 4, life: 1.3, up: 2, gravity: -1 })
+          this.ripple(n.pos, '#35f2d2', 9, 1.2, true)
+        })
+      } else if (ev === 'stabilize') {
+        this.fireOnce(ev, () => this.stabilizeEffects())
       }
     }
-    if (!best) return null
-    const toCore = Math.atan2(-(best.x - pos.x), -(best.z - pos.z))
-    let angle = toCore - this.cam.yaw
-    angle = Math.atan2(Math.sin(angle), Math.cos(angle))
-    return { angle, distance: Math.sqrt(bestD), rise: best.y - pos.y }
+    this.hud.teaser = { time: t, duration: TEASER_SECONDS, paused: this.teaserPaused }
+    if (this.cineT >= TEASER_SECONDS && !this.transitionCb) this.exitTeaser()
   }
 
-  private onPlayerEvent(e: PlayerEvent, pos: THREE.Vector3): void {
-    const feet = pos.clone().setY(pos.y - CONFIG.player.halfHeight - CONFIG.player.radius)
-    if (e.type === 'jump') {
-      this.audio.play('jump')
-      this.fx.puff(feet, 0.3)
-      if (this.tutorial === 'jump') this.advanceTutorial('dash')
-    } else if (e.type === 'land') {
-      this.audio.play('land')
-      this.fx.puff(feet, e.impact)
-      if (e.impact > 0.5) this.cam.addShake(e.impact * 0.5)
-    } else if (e.type === 'dash') {
-      this.audio.play('dash')
-      this.fx.burst(pos, '#7ef9ff', 10, 3)
-      if (this.tutorial === 'dash') this.advanceTutorial('cores')
+  private stabilizeEffects(): void {
+    this.flash = 1
+    if (!this.reducedMotion) this.camRig.shake(1.1)
+    this.audio.stabilizeBlast()
+    const c = this.props.pylonPos
+    this.atmosphere.burst(c.clone().setY(c.y + 5), { count: 220, color: '#5ffbe0', speed: 16, life: 2.6, up: 5, gravity: 1.5, spread: 1.4 })
+    this.atmosphere.burst(c.clone().setY(c.y + 2), { count: 90, color: '#ffffff', speed: 9, life: 1.6, up: 3, gravity: 0, spread: 1.1 })
+    this.ripple(c, '#5ffbe0', 60, 2.4, true)
+    this.ripple(c.clone().setY(c.y + 3), '#aaffee', 40, 1.8, true)
+  }
+
+  // ---- playing ---------------------------------------------------------------------------
+  private updatePlaying(dt: number): void {
+    const inp = this.input
+    const P = this.progress
+    const sim = this.explorer.simPosition
+    this.feet.set(sim.x, sim.y - this.explorer.feetOffset, sim.z)
+    const feet = this.feet
+    this.speedNow = this.explorer.speedH
+    if (this.journalOpen) {
+      this.holdProgress = 0
+      this.audio.holdTone(null)
+      return
+    }
+    if (inp.consume('pause')) this.events.pauseKey()
+    if (inp.consume('journal')) this.openJournal()
+    if (inp.consume('help')) this.events.helpKey()
+    if (inp.consume('walkToggle')) {
+      this.walkMode = !this.walkMode
+      this.events.toast(this.walkMode ? 'Walk mode on (X to toggle)' : 'Run mode on', 'info')
+    }
+    if (inp.consume('freecam')) this.toggleSurvey()
+    if (inp.consume('scanner') && !this.survey) {
+      this.scanMode = !this.scanMode
+      this.explorer.setScanning(this.scanMode)
+      if (this.scanMode) this.audio.scanStart()
+      else this.audio.uiClose()
+      this.scanProgress = 0
+    }
+    if (this.mode !== 'playing') return
+
+    // --- intent
+    const cam = this.camRig
+    const f = cam.forward
+    const r = cam.rightVec
+    const mx = inp.move.x
+    const my = inp.move.y
+    let dx = f.x * my + r.x * mx
+    let dz = f.z * my + r.z * mx
+    const l = Math.hypot(dx, dz)
+    if (l > 1e-4) {
+      dx /= l
+      dz /= l
+    }
+    Object.assign(this.intent, {
+      dirX: dx, dirZ: dz, magnitude: l > 0.01 ? inp.analog : 0, sprint: inp.held('sprint') && !this.walkMode, walk: this.walkMode,
+      speedScale: this.wading > 0.35 ? 0.62 : 1, faceYaw: this.scanMode ? cam.yaw : null,
+      frozen: this.survey || this.fadeBlack > 0.5 || this.transitionCb !== null,
+    })
+
+    // --- tutorial flags
+    if (!P.tutorial.moved && Math.hypot(feet.x - this.spawn.x, feet.z - this.spawn.z) > 3) P.tutorial.moved = true
+    if (!P.tutorial.sprinted && this.explorer.speedH > CONFIG.player.runSpeed + 1.4) P.tutorial.sprinted = true
+
+    // --- water
+    const inLake = this.water.group.visible && Math.hypot(feet.x - POI.basin.x, feet.z - POI.basin.z) < 48
+    this.wading = inLake ? Math.max(0, U.uWaterY.value - feet.y) : 0
+
+    // --- region + stage
+    const region = regionAt(feet.x, feet.z)
+    if (region !== this.regionNow) {
+      this.regionNow = region
+      this.hud.region = region ? POI_NAMES[region] : null
+      if (region) this.events.region(POI_NAMES[region])
+    }
+    const changed = advance(P, { inRegion: region ? { [region]: true } : {} })
+    if (changed) this.onStageChanged(changed)
+
+    // --- safe position + falling
+    this.safeTimer -= dt
+    if (this.safeTimer <= 0 && this.explorer.grounded && this.wading < 0.5 && this.integrity > 0 && this.invuln <= 0) {
+      this.safeTimer = 0.6
+      const slope = this.hf.slopeAt(feet.x, feet.z)
+      if (slope < 0.8) {
+        this.lastSafe.copy(feet)
+        this.lastSafeYaw = cam.yaw
+      }
+    }
+    if ((feet.y < this.hf.heightAt(feet.x, feet.z) - 6 || feet.y < -40) && !this.transitionCb) this.respawn(false)
+
+    // --- timers
+    this.invuln = Math.max(0, this.invuln - dt)
+    if (this.invuln <= 0 && this.integrity < 100) this.integrity = Math.min(100, this.integrity + dt * 8)
+    P.playTime += dt
+    if (P.stabilized && P.vitality < 1 && (this.pulseT < 0 || this.pulseT > 1.2)) {
+      P.vitality = Math.min(1, P.vitality + dt / CONFIG.world.recoverySeconds)
+    }
+    if (this.pulseT >= 0) {
+      this.pulseT += dt
+      this.view.pulse = this.pulseT * 55
+      if (this.pulseT > 6.4) {
+        this.pulseT = -1
+        this.view.pulse = 0
+      }
+    }
+    this.saveClock += dt
+    if (this.saveClock > 12) {
+      this.saveClock = 0
+      this.saveNow()
+    }
+
+    // --- scanner + interaction
+    const ctx = this.readCtx()
+    this.updateScanner(dt, ctx, feet)
+    this.updateInteraction(dt, feet)
+    this.fillHudPlaying(feet)
+  }
+
+  private readCtx(): ReadCtx {
+    return {
+      player: this.explorer.root.position, vit: this.view.vit, act: this.view.act, progress: this.progress, props: this.props,
+      hf: this.hf, flora: this.flora, creatures: this.creatures, time: this.time,
     }
   }
 
-  private onHurt(pos: THREE.Vector3): void {
-    this.audio.play('hurt')
-    this.cam.addShake(0.8)
-    this.fx.burst(pos, '#ff4d6d', 30, 8)
-    this.hooks.hurt()
-    this.hooks.popup(`-1`, this.project(pos.clone().setY(pos.y + 1)), 'hurt')
+  private onStageChanged(stage: Stage): void {
+    this.audio.objective()
+    this.saveNow()
+    if (stage === 'transform') this.events.toast('The core is steady. Water is moving down the channel.', 'objective')
+    else if (stage === 'basinObserve') this.events.toast('The basin is changing. Scan what has returned.', 'objective')
+    else if (stage === 'free') {
+      this.events.toast('Survey complete.', 'objective')
+      this.events.complete()
+    }
   }
 
-  private updateTutorial(pos: THREE.Vector3): void {
-    if (this.tutorial === 'move' && pos.distanceTo(this.tutorialStart) > 2.5) this.advanceTutorial(this.input.method === 'touch' ? 'jump' : 'look')
+  private toggleSurvey(): void {
+    this.survey = !this.survey
+    this.scanMode = false
+    this.explorer.setScanning(false)
+    if (this.survey) {
+      this.camRig.enterSurvey()
+      this.events.toast('Survey camera: WASD fly, Space up, C down, Shift fast, V to exit', 'info')
+    } else this.camRig.exitSurvey()
   }
 
-  private advanceTutorial(next: Hint | null): void {
-    this.tutorial = next
-    this.hooks.hint(next)
+  // ---- damage / respawn --------------------------------------------------------------------
+  private damage(from: THREE.Vector3): void {
+    if (this.invuln > 0 || this.mode !== 'playing') return
+    this.integrity -= 34
+    this.invuln = 1.4
+    this.hurtFlash = 1
+    this.audio.hurt()
+    if (!this.reducedMotion) this.camRig.shake(0.6)
+    const p = this.explorer.root.position
+    const dx = p.x - from.x
+    const dz = p.z - from.z
+    const l = Math.hypot(dx, dz) || 1
+    this.explorer.velocity.set((dx / l) * 10, 6.5, (dz / l) * 10)
+    this.explorer.grounded = false
+    if (this.integrity <= 0) {
+      this.events.toast('Suit integrity failed. Restoring at your last safe position.', 'warn')
+      this.respawn(true)
+    } else {
+      this.events.toast('Discharge hit. Suit integrity reduced.', 'warn')
+    }
   }
 
-  private groundBelow(p: THREE.Vector3): number | null {
-    this.down.origin = { x: p.x, y: p.y, z: p.z }
-    const hit = this.physics.world.castRay(this.down, 30, true, undefined, undefined, this.player.collider)
-    return hit ? p.y - hit.timeOfImpact : null
+  private respawn(failed: boolean): void {
+    void failed
+    this.transition(() => {
+      this.integrity = 100
+      this.invuln = 1.5
+      this.explorer.teleport(this.lastSafe.x, this.lastSafe.y, this.lastSafe.z, this.lastSafeYaw)
+      this.camRig.snapBehind(this.lastSafeYaw)
+      this.audio.respawn()
+    })
   }
 
-  project(world: THREE.Vector3): { x: number; y: number } {
-    const v = world.clone().project(this.cam.camera)
-    const canvas = this.renderer.canvas
-    return { x: ((v.x + 1) / 2) * canvas.clientWidth, y: ((1 - v.y) / 2) * canvas.clientHeight }
+  // ---- scanner -----------------------------------------------------------------------------
+  private updateScanner(dt: number, ctx: ReadCtx, feet: THREE.Vector3): void {
+    void feet
+    const h = this.hud.scanner
+    h.active = this.scanMode
+    this.scanCooldown = Math.max(0, this.scanCooldown - dt)
+    if (!this.scanMode) {
+      this.lock = null
+      this.scanProgress = 0
+      h.state = 'idle'
+      this.hud.tags.length = 0
+      return
+    }
+    const cam = this.camRig.camera
+    const dir = cam.getWorldDirection(this.tmpDir)
+    const found = pickTarget(this.scannables, cam.position, dir, ctx)
+    let target = found
+    if (target && target.dist < 90) {
+      const o = cam.position
+      const to = this.tmpV.copy(target.pos).sub(o)
+      const d = to.length()
+      to.divideScalar(d)
+      const hit = this.physics.world.castRay(new RAPIER.Ray({ x: o.x, y: o.y, z: o.z }, { x: to.x, y: to.y, z: to.z }), d, true, undefined, undefined, undefined, this.explorer.body)
+      if (hit && hit.timeOfImpact < d - (target.s.radius + 2.6)) target = null
+    }
+    if (target?.s.key !== this.lock?.s.key) this.scanProgress = 0
+    this.lock = target ? { s: target.s, pos: target.pos.clone(), dist: target.dist } : null
+    const holding = this.input.held('scanFire')
+    if (this.lock) {
+      const known = has(this.progress, this.lock.s.discovery)
+      h.label = known ? `${this.lock.s.name} (catalogued)` : this.lock.s.name
+      h.dist = this.lock.dist
+      h.known = known
+      if (holding && this.scanCooldown <= 0) {
+        this.scanProgress = Math.min(1, this.scanProgress + dt / (this.lock.s.seconds ?? CONFIG.world.scanSeconds))
+        this.scanSoundClock -= dt
+        if (this.scanSoundClock <= 0) {
+          this.scanSoundClock = 0.16
+          this.audio.scanLockLoop(this.scanProgress)
+        }
+        if (this.scanProgress >= 1) this.completeScan(this.lock, ctx)
+      } else {
+        this.scanProgress = Math.max(0, this.scanProgress - dt * 2)
+      }
+      h.state = this.scanProgress > 0.01 ? 'scanning' : 'target'
+    } else {
+      this.scanProgress = Math.max(0, this.scanProgress - dt * 3)
+      h.state = 'idle'
+      h.label = ''
+      this.missClock -= dt
+      if (holding && this.missClock <= 0) {
+        this.missClock = 0.9
+        this.audio.scanFail()
+      }
+    }
+    h.progress = this.scanProgress
+    this.buildTags(ctx)
+  }
+
+  private buildTags(ctx: ReadCtx): void {
+    const tags = this.hud.tags
+    tags.length = 0
+    const cam = this.camRig.camera
+    const v = this.tmpV2
+    const list: Tag[] = []
+    for (const s of this.scannables) {
+      if (!s.enabled(ctx)) continue
+      const p = s.pos()
+      const d = ctx.player.distanceTo(p)
+      if (d > Math.min(s.range, 140) && s.key !== 'signature') continue
+      if (s.key === 'signature' && has(this.progress, 'signature')) continue
+      v.copy(p).project(cam)
+      if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05) continue
+      const known = has(this.progress, s.discovery)
+      if (known && d > 30) continue
+      list.push({ x: v.x * 0.5 + 0.5, y: -v.y * 0.5 + 0.5, label: s.name, known, dist: d })
+    }
+    list.sort((a, b) => a.dist - b.dist)
+    for (const t of list.slice(0, 9)) tags.push(t)
+  }
+
+  private completeScan(lock: { s: Scannable; pos: THREE.Vector3 }, ctx: ReadCtx): void {
+    const readings = lock.s.readings(ctx, lock.pos)
+    const isNew = this.discover(lock.s.discovery, readings)
+    this.scanProgress = 0
+    this.scanCooldown = 0.9
+    if (isNew) this.audio.scanComplete()
+    else {
+      this.audio.scanBlip()
+      window.setTimeout(() => this.audio.scanBlip(), 90)
+    }
+    this.ripple(lock.pos, isNew ? '#5ffbe0' : '#9fd8cf', Math.max(3, lock.s.radius * 1.8), 0.9, false)
+    this.atmosphere.burst(lock.pos, { count: isNew ? 40 : 14, color: isNew ? '#5ffbe0' : '#9fd8cf', speed: 3.4, life: 0.9, up: 0.5, gravity: 0, spread: 1.4 })
+  }
+
+  /** Record a discovery with the readings captured now. Returns true when it is new. */
+  discover(id: string, readings: [string, string][]): boolean {
+    const d = DISCOVERY_BY_ID.get(id)
+    if (!d) return false
+    const P = this.progress
+    const isNew = !has(P, id)
+    P.discoveries[id] = { at: isNew ? Math.round(P.playTime) : P.discoveries[id].at, readings }
+    this.events.discovery(d, isNew, readings)
+    if (isNew) this.saveNow()
+    return isNew
+  }
+
+  // ---- interaction ---------------------------------------------------------------------------
+  private updateInteraction(dt: number, feet: THREE.Vector3): void {
+    const P = this.progress
+    const hud = this.hud
+    let best: { dist: number; text: string; blocked: boolean; hold: boolean; act: (() => void) | null } | null = null
+    const consider = (dist: number, text: string, blocked: boolean, hold: boolean, act: (() => void) | null) => {
+      if (!best || dist < best.dist) best = { dist, text, blocked, hold, act }
+    }
+    for (const pk of this.props.pickups) {
+      if (pk.collected) continue
+      const d = Math.hypot(pk.pos.x - feet.x, pk.pos.z - feet.z)
+      if (d < 3 && Math.abs(pk.pos.y - feet.y) < 3.2) consider(d, pk.kind === 'shard' ? 'Collect resonance shard' : 'Collect bloodstone ore', false, false, () => this.collect(pk))
+    }
+    for (const n of this.props.nodes) {
+      if (n.repaired) continue
+      const d = Math.hypot(n.pos.x - feet.x, n.pos.z - feet.z)
+      if (d > 4.2 || Math.abs(n.pos.y - feet.y) > 4) continue
+      if (stageIndex(P.stage) < stageIndex('repair')) consider(d, 'Dormant conduit node. Scan the Life-Core first (Q).', true, false, null)
+      else if (P.shards > 0) consider(d, `Seat resonance shard (${P.shards} carried)`, false, false, () => this.seatNode(n.index))
+      else consider(d, 'Needs a resonance shard. Collect them in the crystal field.', true, false, null)
+    }
+    const pd = Math.hypot(this.props.pylonPos.x - feet.x, this.props.pylonPos.z - feet.z)
+    if (pd < 10 && !P.stabilized) {
+      if (stageIndex(P.stage) < stageIndex('repair')) consider(pd + 3, 'The Life-Core is unstable. Scan it first (Q).', true, false, null)
+      else if (nodeCount(P) < 3) consider(pd + 3, `Link all three conduit nodes first (${nodeCount(P)}/3)`, true, false, null)
+      else consider(pd, 'Hold to stabilize the Life-Core', false, true, null)
+    }
+    const b = best as { dist: number; text: string; blocked: boolean; hold: boolean; act: (() => void) | null } | null
+    if (!b) {
+      hud.prompt = null
+      this.holdProgress = Math.max(0, this.holdProgress - dt * 0.8)
+      if (this.holdProgress <= 0) this.audio.holdTone(null)
+      return
+    }
+    let holdVal: number | null = null
+    if (b.hold) {
+      if (this.input.held('interact') && !this.survey) {
+        this.holdProgress = Math.min(1, this.holdProgress + dt / 3.2)
+        this.audio.holdTone(this.holdProgress)
+        this.explorer.reach()
+        if (!this.reducedMotion) this.camRig.shake(0.05 + this.holdProgress * 0.25)
+        if (this.holdProgress >= 1) {
+          this.holdProgress = 0
+          this.audio.holdTone(null)
+          this.finishStabilize()
+        }
+      } else {
+        this.holdProgress = Math.max(0, this.holdProgress - dt * 0.8)
+        if (this.holdProgress <= 0) this.audio.holdTone(null)
+        else this.audio.holdTone(this.holdProgress)
+      }
+      holdVal = this.holdProgress
+    } else {
+      this.holdProgress = Math.max(0, this.holdProgress - dt)
+      if (this.holdProgress <= 0) this.audio.holdTone(null)
+      if (b.act && this.input.consume('interact')) b.act()
+    }
+    hud.prompt = { text: b.text, key: 'E', hold: holdVal, blocked: b.blocked }
+  }
+
+  private collect(pk: Pickup): void {
+    const P = this.progress
+    pk.collected = true
+    this.explorer.reach()
+    const ctx = this.readCtx()
+    const sc = this.scannables.find(s => s.key === pk.id)
+    const readings = sc ? sc.readings(ctx, pk.pos) : []
+    if (pk.kind === 'shard') {
+      P.shardsFound.push(pk.id)
+      P.shards += 1
+      this.audio.pickup('shard')
+      this.events.toast(`Resonance shard recovered (${P.shardsFound.length} found, ${P.shards} carried)`, 'info')
+    } else {
+      P.oreFound.push(pk.id)
+      this.audio.pickup('ore')
+      this.events.toast(`Bloodstone ore sample collected (${P.oreFound.length})`, 'info')
+    }
+    this.atmosphere.burst(pk.pos, { count: 26, color: pk.kind === 'shard' ? '#5ffbe0' : '#e0603a', speed: 3, life: 0.9, up: 1.5, gravity: 3 })
+    this.ripple(pk.pos, pk.kind === 'shard' ? '#5ffbe0' : '#e0603a', 3.5, 0.7, true)
+    this.discover(pk.kind === 'shard' ? 'shard' : 'ore', readings)
+    this.saveNow()
+  }
+
+  private seatNode(i: number): void {
+    const P = this.progress
+    if (P.shards <= 0 || P.nodes[i]) return
+    P.shards -= 1
+    P.nodes[i] = true
+    this.explorer.reach()
+    this.audio.seat()
+    const n = this.props.nodes[i]
+    this.atmosphere.burst(n.pos.clone().setY(n.pos.y + 1.5), { count: 44, color: '#35f2d2', speed: 4, life: 1.3, up: 2, gravity: -1 })
+    this.ripple(n.pos, '#35f2d2', 10, 1.2, true)
+    if (!this.reducedMotion) this.camRig.shake(0.25)
+    const count = nodeCount(P)
+    this.events.toast(count >= 3 ? 'All three nodes linked. Hold E at the core to stabilize it.' : `Conduit node linked (${count}/3)`, 'objective')
+    const sc = this.scannables.find(s => s.key === `node${i}`)
+    this.discover('conduit', sc ? sc.readings(this.readCtx(), n.pos) : [])
+    this.saveNow()
+  }
+
+  private finishStabilize(): void {
+    const P = this.progress
+    if (P.stabilized) return
+    P.stabilized = true
+    P.vitality = Math.max(P.vitality, 0.002)
+    this.pulseT = 0
+    this.explorer.reach()
+    this.stabilizeEffects()
+    this.events.toast('Life-Core stabilized. Watch the land.', 'objective')
+    const changed = advance(P, { inRegion: {} })
+    if (changed) this.onStageChanged(changed)
+    this.saveNow()
+  }
+
+  private ripple(pos: THREE.Vector3, color: string, max: number, dur: number, flat: boolean): void {
+    const r = this.ripples.find(x => !x.active) ?? this.ripples[0]
+    r.active = true
+    r.t = 0
+    r.dur = dur
+    r.max = max
+    r.flat = flat
+    r.mesh.visible = true
+    r.mesh.position.copy(pos)
+    if (flat) {
+      r.mesh.rotation.set(-Math.PI / 2, 0, 0)
+      r.mesh.position.y += 0.4
+    }
+    ;(r.mesh.material as THREE.MeshBasicMaterial).color.set(color)
+  }
+
+  // ---- HUD ------------------------------------------------------------------------------------
+  private fillHudPlaying(feet: THREE.Vector3): void {
+    const P = this.progress
+    const h = this.hud
+    const obj = objectiveFor(P)
+    h.objective = obj
+    if (obj.title !== this.lastObjectiveTitle) {
+      if (this.lastObjectiveTitle !== '') this.events.objectiveChanged(obj)
+      this.lastObjectiveTitle = obj.title
+    }
+    h.integrity = this.integrity
+    h.shards = P.shards
+    h.ore = P.oreFound.length
+    h.nodes = nodeCount(P)
+    h.vitality = P.vitality
+    h.discoveries = Object.keys(P.discoveries).length
+    h.survey = this.survey
+    h.walk = this.walkMode
+    h.speed = this.speedNow
+    h.yaw = ((-this.camRig.yaw * 180) / Math.PI + 720) % 360
+    // Waypoint toward the current objective region.
+    h.waypoint = null
+    h.bearing = null
+    if (obj.target && !this.survey) {
+      const cp = this.props.checkpoints[obj.target]
+      const target = obj.target === 'core' ? this.props.pylonPos.clone().setY(this.props.pylonPos.y + 14) : cp.clone().setY(cp.y + 7)
+      const dist = Math.hypot(target.x - feet.x, target.z - feet.z)
+      h.bearing = ((Math.atan2(target.x - feet.x, -(target.z - feet.z)) * 180) / Math.PI + 360) % 360
+      const cam = this.camRig.camera
+      const v = this.tmpV2.copy(target).applyMatrix4(cam.matrixWorldInverse)
+      const behind = v.z > 0
+      const nd = this.tmpV.copy(target).project(cam)
+      let x = nd.x
+      let y = nd.y
+      if (behind) {
+        x = v.x >= 0 ? 2 : -2
+        y = 0
+      }
+      h.waypoint = { x: x * 0.5 + 0.5, y: -y * 0.5 + 0.5, behind, dist, label: POI_NAMES[obj.target] }
+    }
+  }
+
+  // ---- visuals ------------------------------------------------------------------------------
+  private ventPhaseBefore = false
+
+  private updateVisuals(dt: number): void {
+    const playing = this.mode === 'playing' || this.mode === 'paused' || this.mode === 'title' || this.mode === 'opening'
+    const P = this.progress
+    if (this.mode !== 'teaser') {
+      const targetAct = P.stabilized ? 1 : nodeCount(P) * 0.28
+      this.view.act += (targetAct - this.view.act) * Math.min(1, dt * 0.9)
+      if (Math.abs(targetAct - this.view.act) < 0.002) this.view.act = targetAct
+      this.view.vit = P.vitality
+      this.view.nodes = [...P.nodes] as [boolean, boolean, boolean]
+      this.view.hold = this.holdProgress
+      if (this.mode !== 'playing' && this.mode !== 'paused') this.view.pulse = 0
+    }
+    if (playing || this.mode === 'teaser') {
+      /* continue */
+    }
+    const v = this.view
+    U.uVit.value = v.vit
+    U.uAct.value = v.act
+    U.uPulse.value = v.pulse
+    this.water.update(v.vit, this.hf)
+    for (let i = 0; i < 3; i += 1) this.props.setNodeVisual(i, v.nodes[i], this.mode !== 'title')
+    const body = this.explorer.root.position
+    const camPos = this.camRig.camera.position
+    const res = this.props.update(dt, this.time, v.act, v.hold, body, camPos)
+    if (res.fired) this.audio.ventFire(Math.min(1, camPos.distanceTo(body) / 70))
+    if (res.hit && this.mode === 'playing') {
+      let nearest = this.props.vents[0]
+      for (const vt of this.props.vents) if (vt.pos.distanceTo(body) < nearest.pos.distanceTo(body)) nearest = vt
+      this.damage(nearest.pos)
+    }
+    // Telegraph sound for vents close to the explorer.
+    let charging = false
+    for (const vt of this.props.vents) {
+      if (vt.pos.distanceTo(body) < 34 && this.props.ventPhase(vt, this.time).charge > 0.02) charging = true
+    }
+    if (charging && !this.ventPhaseBefore && (this.mode === 'playing' || this.mode === 'teaser')) this.audio.ventCharge()
+    this.ventPhaseBefore = charging
+    this.creatures.update(dt, this.time, v.vit, body, this.explorer.speedH)
+    this.atmosphere.update(dt, this.time, camPos, v.vit, v.act, P.stabilized || (this.mode === 'teaser' && v.act >= 1), this.renderer.gl.domElement.height)
+    this.explorer.animate(dt, this.time)
+    for (const r of this.ripples) {
+      if (!r.active) continue
+      r.t += dt
+      const k = r.t / r.dur
+      if (k >= 1) {
+        r.active = false
+        r.mesh.visible = false
+        continue
+      }
+      const s = r.max * (1 - Math.pow(1 - k, 3)) + 0.2
+      r.mesh.scale.set(s, s, s)
+      if (!r.flat) r.mesh.lookAt(camPos)
+      ;(r.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.9
+    }
+    this.flash = Math.max(0, this.flash - dt * 1.1)
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt * 1.8)
+    this.hud.flash = this.flash
+    this.hud.hurt = this.hurtFlash
+    this.hud.integrity = this.integrity
+
+    this.ambClock -= dt
+    if (this.ambClock <= 0) {
+      this.ambClock = 0.25
+      const wind = Math.min(1, U.uWind.value.length() / 1.8)
+      const ch = this.hf.channelDistance(body.x, body.z).d
+      const lakeD = Math.hypot(body.x - POI.basin.x, body.z - POI.basin.z)
+      const water = Math.max(smooth(0.03, 0.15, v.vit) * (1 - smooth(4, 38, ch)), smooth(0.1, 0.3, v.vit) * (1 - smooth(22, 70, lakeD)))
+      this.audio.setAmbience({ wind, vit: v.vit, core: this.props.coreProximity(body), act: v.act, water, tension: this.mode === 'playing' && this.regionNow === 'crystal' ? 1 : 0 })
+    }
+  }
+
+  // ---- camera + draw --------------------------------------------------------------------------
+  private readonly surveyMove = new THREE.Vector3()
+
+  private updateCameraAndDraw(dt: number): void {
+    const playingNow = this.mode === 'playing' && !this.journalOpen
+    const look = this.input.takeLook()
+    if (!playingNow) {
+      look.x = 0
+      look.y = 0
+    }
+    const rp = this.explorer.root.position
+    const focus = this.tmpV.set(rp.x, rp.y + 0.55, rp.z)
+    this.surveyMove.set(this.input.move.x, this.input.move.y, (this.input.held('jump') ? 1 : 0) - (this.input.held('descend') ? 1 : 0))
+    this.camRig.update(dt, focus, look, { scanning: this.scanMode && playingNow, move: this.surveyMove, fast: this.input.held('sprint'), time: this.time })
+    const cam = this.camRig.camera
+    this.sky.mesh.position.copy(cam.position)
+    this.fill.position.copy(cam.position)
+    this.fill.target.position.copy(cam.position).add(cam.getWorldDirection(this.tmpDir).multiplyScalar(12))
+    this.lighting.update(this.time, this.view.vit, this.view.act, rp)
+    const orbitPhase = (this.mode === 'opening' || this.mode === 'teaser') && this.cineOut.phase === 'orbit'
+    if (orbitPhase) {
+      const o = this.cineOut.orbit
+      const w = this.renderer.canvas.clientWidth || window.innerWidth
+      const h = this.renderer.canvas.clientHeight || window.innerHeight
+      this.orbit.setAspect(w / h)
+      this.orbit.pose(this.time, o.distance, o.swing, o.lift, o.aim)
+      this.orbit.setHeal(o.heal)
+      this.renderer.render(this.orbit.scene, this.orbit.camera)
+    } else {
+      this.renderer.render(this.scene, cam)
+    }
+    if (this.captureWanted) {
+      const cb = this.captureWanted
+      this.captureWanted = null
+      cb(this.renderer.canvas.toDataURL('image/png'))
+    }
+  }
+
+  // ---- debug / test hooks ---------------------------------------------------------------------
+  /** Test hook: put the explorer on the ground at (x, z). */
+  debugTeleport(x: number, z: number, yaw = 0): void {
+    this.explorer.teleport(x, this.hf.heightAt(x, z), z, yaw)
+    this.lastSafe.set(x, this.hf.heightAt(x, z), z)
+    this.camRig.snapBehind(yaw)
+  }
+
+  debugState(): Record<string, unknown> {
+    const p = this.explorer.root.position
+    return {
+      mode: this.mode, stage: this.progress.stage, pos: [p.x, p.y, p.z], vit: this.progress.vitality, act: this.view.act, nodes: this.progress.nodes,
+      shards: this.progress.shards, shardsFound: this.progress.shardsFound.length, discoveries: Object.keys(this.progress.discoveries), stabilized: this.progress.stabilized,
+      integrity: this.integrity, scanMode: this.scanMode, lock: this.lock?.s.key ?? null, region: this.regionNow, count: DISCOVERIES.length, vent: VENT_RADIUS,
+    }
+  }
+
+  get props_(): Props {
+    return this.props
+  }
+  get scannableList(): Scannable[] {
+    return this.scannables
+  }
+  get camera(): THREE.PerspectiveCamera {
+    return this.camRig.camera
+  }
+  get explorerPos(): THREE.Vector3 {
+    return this.explorer.root.position
+  }
+  debugAim(target: THREE.Vector3): void {
+    const p = this.explorer.root.position
+    const dx = target.x - p.x
+    const dz = target.z - p.z
+    this.camRig.yaw = Math.atan2(-dx, -dz)
+    const dy = target.y - (p.y + 0.6)
+    this.camRig.pitch = clamp(-Math.atan2(dy, Math.hypot(dx, dz)), -0.45, 1.2)
   }
 }

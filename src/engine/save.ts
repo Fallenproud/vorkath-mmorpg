@@ -1,108 +1,87 @@
-/**
- * Versioned local save. Everything the player keeps between sessions lives in one JSON record so
- * it is easy to migrate. Corrupt or foreign data falls back to defaults instead of crashing.
- */
-export type Locale = 'en' | 'zh-CN'
+import { parseProgress, type Progress } from '../game/state'
+
 export type Quality = 'low' | 'medium' | 'high'
 
-export type ScoreEntry = { name: string; score: number; seconds: number; at: number }
-
-export type SaveData = {
-  version: 1
-  /** '' = never chosen; the game follows the browser language until the player picks one. */
-  locale: Locale | ''
-  musicVolume: number
-  sfxVolume: number
+export interface Settings {
+  master: number
+  music: number
+  sfx: number
+  ambience: number
   muted: boolean
   sensitivity: number
   invertY: boolean
   quality: Quality
   reducedMotion: boolean
-  tutorialDone: boolean
-  playerName: string
-  leaderboard: ScoreEntry[]
+  hints: boolean
+  fov: number
 }
 
-export const SAVE_KEY = 'game3d.save'
-export const LEADERBOARD_SIZE = 10
+export interface SaveData {
+  version: 2
+  settings: Settings
+  progress: Progress | null
+}
 
-export function defaultSave(): SaveData {
+export const SAVE_KEY = 'vorkath-prime.save.v2'
+
+export const defaultSettings = (): Settings => ({
+  master: 0.8, music: 0.7, sfx: 0.8, ambience: 0.8, muted: false, sensitivity: 1, invertY: false,
+  quality: 'high', reducedMotion: false, hints: true, fov: 60,
+})
+export const defaultSave = (): SaveData => ({ version: 2, settings: defaultSettings(), progress: null })
+
+const clamp = (v: unknown, a: number, b: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : d)
+
+export function parseSettings(raw: unknown): Settings {
+  const d = defaultSettings()
+  if (!raw || typeof raw !== 'object') return d
+  const r = raw as Record<string, unknown>
   return {
-    version: 1,
-    locale: '',
-    musicVolume: 0.7,
-    sfxVolume: 0.8,
-    muted: false,
-    sensitivity: 1,
-    invertY: false,
-    quality: 'high',
-    reducedMotion: false,
-    tutorialDone: false,
-    playerName: 'PLAYER',
-    leaderboard: [],
+    master: clamp(r.master, 0, 1, d.master), music: clamp(r.music, 0, 1, d.music), sfx: clamp(r.sfx, 0, 1, d.sfx),
+    ambience: clamp(r.ambience, 0, 1, d.ambience), muted: r.muted === true,
+    sensitivity: clamp(r.sensitivity, 0.3, 2.5, d.sensitivity), invertY: r.invertY === true,
+    quality: r.quality === 'low' || r.quality === 'medium' || r.quality === 'high' ? r.quality : d.quality,
+    reducedMotion: r.reducedMotion === true, hints: r.hints !== false, fov: clamp(r.fov, 50, 85, d.fov),
   }
 }
 
-const clamp01 = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback)
-
-/** Parse untrusted stored JSON into a valid SaveData (pure; unit tested). */
-export function parseSave(raw: string | null): SaveData {
-  const base = defaultSave()
-  if (!raw) return base
-  let data: Record<string, unknown>
+export function parseSave(text: string | null): SaveData {
+  if (!text) return defaultSave()
   try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return base
-    data = parsed as Record<string, unknown>
+    const raw = JSON.parse(text)
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 2) return defaultSave()
+    return { version: 2, settings: parseSettings(raw.settings), progress: parseProgress(raw.progress) }
   } catch {
-    return base
-  }
-  if (data.version !== 1) return base
-  const board = Array.isArray(data.leaderboard) ? data.leaderboard : []
-  return {
-    version: 1,
-    locale: data.locale === 'en' || data.locale === 'zh-CN' ? data.locale : '',
-    musicVolume: clamp01(data.musicVolume, base.musicVolume),
-    sfxVolume: clamp01(data.sfxVolume, base.sfxVolume),
-    muted: data.muted === true,
-    sensitivity: typeof data.sensitivity === 'number' && data.sensitivity >= 0.2 && data.sensitivity <= 3 ? data.sensitivity : base.sensitivity,
-    invertY: data.invertY === true,
-    quality: data.quality === 'low' || data.quality === 'medium' || data.quality === 'high' ? data.quality : base.quality,
-    reducedMotion: data.reducedMotion === true,
-    tutorialDone: data.tutorialDone === true,
-    playerName: typeof data.playerName === 'string' && data.playerName.trim() ? data.playerName.trim().slice(0, 16) : base.playerName,
-    leaderboard: board
-      .filter((e): e is ScoreEntry => !!e && typeof e === 'object' && typeof (e as ScoreEntry).name === 'string' && Number.isFinite((e as ScoreEntry).score))
-      .map(e => ({ name: e.name.slice(0, 16), score: Math.max(0, Math.floor(e.score)), seconds: Number.isFinite(e.seconds) ? e.seconds : 0, at: Number.isFinite(e.at) ? e.at : 0 }))
-      .slice(0, LEADERBOARD_SIZE),
+    return defaultSave()
   }
 }
 
-/** Insert a run into a bounded, deterministically ordered leaderboard (higher score, then faster, then earlier). */
-export function insertScore(board: ScoreEntry[], entry: ScoreEntry): { board: ScoreEntry[]; rank: number } {
-  const next = [...board, entry].sort((a, b) => b.score - a.score || a.seconds - b.seconds || a.at - b.at).slice(0, LEADERBOARD_SIZE)
-  return { board: next, rank: next.indexOf(entry) }
-}
-
+/** Small wrapper over localStorage that never throws (private windows, quota, disabled storage). */
 export class SaveStore {
-  data: SaveData
-
-  constructor(private readonly storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = globalThis.localStorage) {
-    let raw: string | null = null
-    try {
-      raw = this.storage?.getItem(SAVE_KEY) ?? null
-    } catch {
-      raw = null
-    }
-    this.data = parseSave(raw)
+  data: SaveData = defaultSave()
+  constructor(private readonly storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null = safeStorage()) {
+    this.data = parseSave(this.read())
   }
-
-  update(patch: Partial<SaveData>): void {
-    this.data = { ...this.data, ...patch }
-    try {
-      this.storage?.setItem(SAVE_KEY, JSON.stringify(this.data))
-    } catch {
-      // Private browsing or quota: the game keeps working with in-memory settings.
-    }
+  private read(): string | null {
+    try { return this.storage?.getItem(SAVE_KEY) ?? null } catch { return null }
   }
+  private write(): void {
+    try { this.storage?.setItem(SAVE_KEY, JSON.stringify(this.data)) } catch { /* storage unavailable */ }
+  }
+  get settings(): Settings { return this.data.settings }
+  get progress(): Progress | null { return this.data.progress }
+  saveSettings(): void { this.write() }
+  saveProgress(p: Progress): void {
+    this.data.progress = structuredClone(p)
+    this.write()
+  }
+  clearProgress(): void {
+    this.data.progress = null
+    this.write()
+  }
+  hasProgress(): boolean { return this.data.progress !== null }
+}
+
+function safeStorage(): Storage | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage } catch { return null }
 }

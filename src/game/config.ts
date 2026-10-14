@@ -1,58 +1,38 @@
 /**
- * All gameplay tuning in one place. Change numbers here before touching game code; tests read
- * the same values so rule changes stay covered.
+ * All gameplay tuning in one place. Change numbers here before touching game code.
  */
 export const DEFAULT_CONFIG = {
-  run: {
-    seconds: 150,
-    lives: 3,
-    /** Seconds of invulnerability after a hit. */
-    invulnerable: 1.6,
-    /** Falling below this height costs a life and respawns at the last checkpoint. */
-    killY: -18,
-  },
-  score: {
-    core: 100,
-    /** Consecutive pickups within `comboWindow` seconds raise the multiplier up to `comboMax`. */
-    comboWindow: 3.5,
-    comboMax: 5,
-    /** Bonus per second left on the clock when every core is collected. */
-    timeBonus: 25,
-    lifeBonus: 500,
-  },
   player: {
-    radius: 0.42,
-    halfHeight: 0.5,
-    walkSpeed: 7,
-    sprintSpeed: 11,
-    acceleration: 60,
-    airControl: 0.45,
-    jumpSpeed: 10.5,
-    gravity: -30,
+    radius: 0.36,
+    halfHeight: 0.55,
+    walkSpeed: 3.4,
+    runSpeed: 6.6,
+    sprintSpeed: 10.2,
+    acceleration: 52,
+    airControl: 0.4,
+    jumpSpeed: 8.4,
+    gravity: -26,
     /** Extra gravity when the jump button is released early, for variable jump height. */
-    lowJumpGravity: -58,
-    maxFall: -40,
+    lowJumpGravity: -46,
+    maxFall: -38,
     coyoteTime: 0.12,
     jumpBuffer: 0.14,
-    dashSpeed: 22,
-    dashTime: 0.16,
-    dashCooldown: 0.9,
-    turnSpeed: 14,
+    turnSpeed: 12,
   },
   camera: {
-    distance: 6.4,
-    height: 2.4,
-    minPitch: -0.35,
-    maxPitch: 1.1,
-    follow: 10,
-    fov: 62,
+    distance: 5.4,
+    height: 1.75,
+    minPitch: -0.25,
+    maxPitch: 1.2,
+    follow: 9,
+    fov: 60,
   },
-  drones: {
-    speed: 3.2,
-    radius: 0.7,
-    /** Drones speed up as the clock runs down. */
-    rageSpeed: 5,
-    rageAt: 45,
+  world: {
+    /** Seconds of play that the full ecological recovery takes (accelerated prototype time). */
+    recoverySeconds: 90,
+    scanRange: 42,
+    scanSeconds: 1.1,
+    interactRange: 3.4,
   },
 } as const
 

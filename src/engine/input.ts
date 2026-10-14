@@ -1,42 +1,54 @@
 /**
- * Unified input: keyboard + mouse (pointer lock), gamepad and touch all feed one action state.
+ * Unified input: keyboard + mouse (pointer lock) and gamepad feed one action state.
  * Gameplay reads `move`, `look` and `pressed()/held()`; it never checks raw keys.
  *
  * Call `endFrame()` once per rendered frame after gameplay consumed edge-triggered presses.
  */
-export type Action = 'jump' | 'sprint' | 'dash' | 'pause' | 'confirm' | 'back' | 'interact'
-export type InputMethod = 'keyboard' | 'gamepad' | 'touch'
+export type Action =
+  | 'jump' | 'sprint' | 'pause' | 'confirm' | 'back' | 'interact'
+  | 'scanner' | 'scanFire' | 'journal' | 'freecam' | 'walkToggle' | 'descend' | 'skip' | 'help'
+export type InputMethod = 'keyboard' | 'gamepad'
 
 const KEY_BINDINGS: Record<Action, string[]> = {
   jump: ['Space'],
   sprint: ['ShiftLeft', 'ShiftRight'],
-  dash: ['KeyF', 'KeyJ'],
   pause: ['Escape', 'KeyP'],
   confirm: ['Enter', 'NumpadEnter'],
-  // Menus handle Escape/Backspace themselves via DOM keydown; `back` is the gamepad B button.
   back: [],
   interact: ['KeyE'],
+  scanner: ['KeyQ'],
+  scanFire: ['KeyF'],
+  journal: ['KeyJ', 'Tab'],
+  freecam: ['KeyV'],
+  walkToggle: ['KeyX'],
+  descend: ['KeyC', 'ControlLeft'],
+  skip: ['Space', 'Enter', 'Escape'],
+  help: ['KeyH'],
 }
 const MOVE_KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'] }
-// Standard gamepad mapping: A=0, B=1, X=2, Y=3, LB=4, RB=5, RT=7, Start=9, L3=10.
-const PAD_BINDINGS: Record<Action, number[]> = { jump: [0], sprint: [4, 10], dash: [2, 5, 7], pause: [9], confirm: [0], back: [1], interact: [3] }
+// Standard gamepad mapping: A=0, B=1, X=2, Y=3, LB=4, RB=5, LT=6, RT=7, Back=8, Start=9, L3=10, R3=11.
+const PAD_BINDINGS: Record<Action, number[]> = {
+  jump: [0], sprint: [4, 10], pause: [9], confirm: [0], back: [1], interact: [2],
+  scanner: [3], scanFire: [7], journal: [8], freecam: [11], walkToggle: [5], descend: [6], skip: [0, 9], help: [],
+}
 
 export class Input {
   /** Movement intent in [-1, 1]: x = strafe right, y = forward. */
   readonly move = { x: 0, y: 0 }
-  /** Camera look delta accumulated since the last `endFrame()` (radians-ish units, pre-sensitivity). */
+  /** Raw analog magnitude (0..1) before normalisation, so a half-tilted stick walks. */
+  analog = 0
   readonly look = { x: 0, y: 0 }
   method: InputMethod = 'keyboard'
-  /** Multiplies look deltas; settings screen writes it. */
   sensitivity = 1
   invertY = false
-
+  /** When false (menus, cinematics) key presses are not queued as gameplay actions. */
+  enabled = true
   private keys = new Set<string>()
   private held_ = new Set<Action>()
   private pressed_ = new Set<Action>()
-  private touchMove = { x: 0, y: 0 }
-  private touchButtons = new Set<Action>()
   private padPrev = new Set<Action>()
+  private mouseDown = false
+  private dragLook = false
   private listeners: Array<() => void> = []
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -45,58 +57,71 @@ export class Input {
       this.listeners.push(() => target.removeEventListener(type, fn as EventListener, opts))
     }
     on(window, 'keydown', e => {
+      const typing = (e.target as HTMLElement | null)?.matches?.('input[type="text"], textarea')
+      if (!typing && (e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'Tab')) e.preventDefault()
       if (e.repeat) return
       this.keys.add(e.code)
       this.method = 'keyboard'
+      if (!this.enabled) return
       for (const [action, codes] of Object.entries(KEY_BINDINGS) as [Action, string[]][]) {
         if (codes.includes(e.code)) this.pressed_.add(action)
       }
-      // Keep the page from scrolling, but never block typing in text fields (leaderboard name).
-      const typing = (e.target as HTMLElement | null)?.matches?.('input, textarea')
-      if (!typing && (e.code === 'Space' || e.code.startsWith('Arrow'))) e.preventDefault()
     })
     on(window, 'keyup', e => this.keys.delete(e.code))
-    on(window, 'blur', () => this.keys.clear())
+    on(window, 'blur', () => {
+      this.keys.clear()
+      this.mouseDown = false
+    })
     on(window, 'mousedown', e => {
-      // Left click dashes while the mouse is captured for camera look.
-      if (document.pointerLockElement === canvas && e.button === 0) this.pressed_.add('dash')
+      if (e.button === 2 && this.enabled && (e.target as HTMLElement | null) === canvas) this.dragLook = true
+      if (document.pointerLockElement === canvas && e.button === 0) {
+        this.mouseDown = true
+        if (this.enabled) this.pressed_.add('scanFire')
+      }
+    })
+    on(window, 'mouseup', e => {
+      if (e.button === 0) this.mouseDown = false
+      if (e.button === 2) this.dragLook = false
+    })
+    on(window, 'contextmenu', e => {
+      if ((e.target as HTMLElement | null) === canvas) e.preventDefault()
     })
     on(window, 'mousemove', e => {
-      if (document.pointerLockElement !== canvas) return
+      // Pointer-lock look, or right-button drag as a fallback where lock is unavailable.
+      if (document.pointerLockElement !== canvas && !(this.dragLook && this.enabled)) return
       this.look.x += e.movementX * 0.0022
       this.look.y += e.movementY * 0.0022
     })
   }
 
-  /** Request pointer lock for mouse look (must be called from a user gesture). */
-  lockPointer(): void {
-    if (this.method !== 'touch' && document.pointerLockElement !== this.canvas) {
-      this.canvas.requestPointerLock?.()?.catch?.(() => undefined)
-    }
+  get pointerLocked(): boolean {
+    return document.pointerLockElement === this.canvas
   }
 
+  /** Request pointer lock for mouse look (must be called from a user gesture). */
+  lockPointer(): void {
+    if (document.pointerLockElement !== this.canvas) {
+      try {
+        const p = this.canvas.requestPointerLock?.() as unknown as Promise<void> | undefined
+        p?.catch?.(() => undefined)
+      } catch {
+        /* unsupported in this context (e.g. headless) */
+      }
+    }
+  }
   unlockPointer(): void {
     if (document.pointerLockElement) document.exitPointerLock()
   }
 
-  /** Touch controls feed these from the on-screen joystick and buttons. */
-  setTouchMove(x: number, y: number): void {
-    this.method = 'touch'
-    this.touchMove.x = x
-    this.touchMove.y = y
+  /** Programmatic key state for automated tests and accessibility helpers. */
+  simulateKey(code: string, down: boolean): void {
+    if (down) {
+      this.keys.add(code)
+      for (const [action, codes] of Object.entries(KEY_BINDINGS) as [Action, string[]][]) if (codes.includes(code)) this.pressed_.add(action)
+    } else this.keys.delete(code)
   }
-
-  addTouchLook(dx: number, dy: number): void {
-    this.method = 'touch'
-    this.look.x += dx * 0.006
-    this.look.y += dy * 0.006
-  }
-
-  setTouchButton(action: Action, down: boolean): void {
-    this.method = 'touch'
-    if (down && !this.touchButtons.has(action)) this.pressed_.add(action)
-    if (down) this.touchButtons.add(action)
-    else this.touchButtons.delete(action)
+  press(action: Action): void {
+    this.pressed_.add(action)
   }
 
   /** Sample continuous sources. Call once per rendered frame before gameplay reads input. */
@@ -105,16 +130,18 @@ export class Input {
     let x = (k(MOVE_KEYS.right) ? 1 : 0) - (k(MOVE_KEYS.left) ? 1 : 0)
     let y = (k(MOVE_KEYS.up) ? 1 : 0) - (k(MOVE_KEYS.down) ? 1 : 0)
     this.held_.clear()
-    for (const [action, codes] of Object.entries(KEY_BINDINGS) as [Action, string[]][]) {
-      if (k(codes)) this.held_.add(action)
+    if (this.enabled) {
+      for (const [action, codes] of Object.entries(KEY_BINDINGS) as [Action, string[]][]) {
+        if (k(codes)) this.held_.add(action)
+      }
+      if (this.mouseDown) this.held_.add('scanFire')
+    } else {
+      x = 0
+      y = 0
     }
-    for (const action of this.touchButtons) this.held_.add(action)
-    if (this.touchMove.x !== 0 || this.touchMove.y !== 0) {
-      x = this.touchMove.x
-      y = this.touchMove.y
-    }
+    this.analog = Math.min(1, Math.hypot(x, y))
     const pad = navigator.getGamepads?.().find(p => p && p.connected)
-    if (pad) {
+    if (pad && this.enabled) {
       const dead = (v: number) => (Math.abs(v) < 0.18 ? 0 : v)
       const lx = dead(pad.axes[0] ?? 0)
       const ly = dead(pad.axes[1] ?? 0)
@@ -125,6 +152,7 @@ export class Input {
       if (lx !== 0 || ly !== 0) {
         x = lx
         y = -ly
+        this.analog = Math.min(1, Math.hypot(lx, ly))
       }
       this.look.x += rx * 0.045
       this.look.y += ry * 0.045
@@ -146,12 +174,10 @@ export class Input {
   held(action: Action): boolean {
     return this.held_.has(action)
   }
-
   /** True once per physical press. */
   pressed(action: Action): boolean {
     return this.pressed_.has(action)
   }
-
   /**
    * Read and clear a press. Use this inside fixed simulation steps: several steps can run in one
    * rendered frame, and a press must trigger exactly one jump/confirm.
@@ -159,19 +185,15 @@ export class Input {
   consume(action: Action): boolean {
     return this.pressed_.delete(action)
   }
-
-  /** Consume the look delta with sensitivity/invert applied. */
   takeLook(): { x: number; y: number } {
     const out = { x: this.look.x * this.sensitivity, y: this.look.y * this.sensitivity * (this.invertY ? -1 : 1) }
     this.look.x = 0
     this.look.y = 0
     return out
   }
-
   endFrame(): void {
     this.pressed_.clear()
   }
-
   dispose(): void {
     for (const off of this.listeners) off()
     this.listeners = []

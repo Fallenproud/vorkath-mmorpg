@@ -38,7 +38,7 @@ export class Renderer {
     this.gl.outputColorSpace = THREE.SRGBColorSpace
     this.gl.toneMapping = THREE.ACESFilmicToneMapping
     this.gl.toneMappingExposure = 1
-    this.gl.shadowMap.type = THREE.PCFSoftShadowMap
+    this.gl.shadowMap.type = THREE.PCFShadowMap
     this.applyQuality(quality)
     window.addEventListener('resize', () => this.resize())
   }

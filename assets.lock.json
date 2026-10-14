@@ -1,6 +1,58 @@
 {
   "version": 2,
-  "groups": {},
+  "groups": {
+    "models": {
+      "name": "Models",
+      "order": 10
+    },
+    "share": {
+      "name": "Share",
+      "order": 20
+    }
+  },
   "bundles": {},
-  "assets": {}
+  "assets": {
+    "assets/models/crystal_cluster.glb": {
+      "path": "/manus-storage/game/sha256/c5cb2b2be38b7118497ab9626c57b31b4e935e41ef534e314f88b213c66c5e84.glb",
+      "sha256": "sha256:c5cb2b2be38b7118497ab9626c57b31b4e935e41ef534e314f88b213c66c5e84",
+      "size": 512012,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/frondtree.glb": {
+      "path": "/manus-storage/game/sha256/1e040fb9f5b922d379b3bf507fcab57dc89b96c02de94dc1f79486e87abb0814.glb",
+      "sha256": "sha256:1e040fb9f5b922d379b3bf507fcab57dc89b96c02de94dc1f79486e87abb0814",
+      "size": 1198428,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/landing_pod.glb": {
+      "path": "/manus-storage/game/sha256/c2ad1739843290d954cd81c8a55a59ee11aea0ad0475173605031844f0d4635f.glb",
+      "sha256": "sha256:c2ad1739843290d954cd81c8a55a59ee11aea0ad0475173605031844f0d4635f",
+      "size": 567064,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/lifecore_pylon.glb": {
+      "path": "/manus-storage/game/sha256/20cb23d14e53f14920d1d422ca83ec11cc3778438d546fcbfd773b6bc4f814f3.glb",
+      "sha256": "sha256:20cb23d14e53f14920d1d422ca83ec11cc3778438d546fcbfd773b6bc4f814f3",
+      "size": 555816,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/mossgrazer.glb": {
+      "path": "/manus-storage/game/sha256/4a5a2fd250fda7cfa520629f6e358193adc2018c709c81cda220f22baa25f194.glb",
+      "sha256": "sha256:4a5a2fd250fda7cfa520629f6e358193adc2018c709c81cda220f22baa25f194",
+      "size": 626544,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/share/favicon.png": {
+      "path": "/manus-storage/game/sha256/f837755678ff4a1d4351a72a910b8e0501f987d5534073dd28715d7847a227c0.png",
+      "sha256": "sha256:f837755678ff4a1d4351a72a910b8e0501f987d5534073dd28715d7847a227c0",
+      "size": 9411,
+      "assetType": "image",
+      "groupId": "share"
+    }
+  }
 }
