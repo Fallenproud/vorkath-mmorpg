@@ -230,3 +230,5 @@ ol.steps { padding-left: 18px; margin: 0; } ol.steps li { margin-bottom: 7px; }
 /* Keep modal action rows reachable on short viewports */
 .modal-body > .row { position: sticky; bottom: -24px; background: var(--panel-solid); padding: 12px 0 4px; margin-top: 12px; border-top: 1px solid var(--line); z-index: 2; }
 @media (max-height: 640px) { .modal-body { padding: 18px; } .modal-body > .row { bottom: -18px; } }
+
+.land-name { color: #b9a9a0; font-size: 11px; letter-spacing: 0.04em; margin: -3px 0 7px; opacity: 0.9; }

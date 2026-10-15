@@ -104,6 +104,41 @@ export const DISCOVERIES: Discovery[] = [
     hint: 'Movement among the new plants.',
   },
   {
+    id: 'gasmat', title: 'Gas Plume Mat', category: 'Hazard', region: 'crystal',
+    text: 'A ring of sulphur-yellow crust that has formed around a discharge vent where mineral-rich gas condenses between bursts. The inner edge glows orange and the rim is pale and brittle. It is the only thing growing on the scar, and it is not alive: it is deposited, not grown. The crust marks where the vent has been active longest. (Prototype field note; label taken from the reference ecology board.)',
+    hint: 'A yellow crust ring around a vent.',
+  },
+  {
+    id: 'lantern', title: 'Lantern Lichen', category: 'Biology', region: 'basin',
+    text: 'Flat amber and green pads that glow faintly, spread over weathered rock behind the recovery front. They are the first thing to colonise cooled fissure crust, and they brighten at night. Where they sit the surface has already stopped being glass. Treat the pad edges as the clearest sign that the front has passed. (Prototype interpretation of a board label; not approved canon.)',
+    hint: 'Small glowing pads on cooled rock once recovery begins.',
+  },
+  {
+    id: 'sedge', title: 'Thorn Sedge', category: 'Biology', region: 'basin',
+    text: 'A tussock of narrow blades that are olive at the base and crimson at the tip, with stiff points that discourage grazing. It roots in the thin soil formed by lichen and moss and prefers open basin ground and the foothills. The red tips match the bloodstone ore in the soil. (Prototype interpretation; not approved canon.)',
+    hint: 'A tussock of red-tipped blades in the new soil.',
+  },
+  {
+    id: 'fern', title: 'Glimmer Fern', category: 'Biology', region: 'basin',
+    text: 'A rosette of arching fronds with turquoise-lit leaflet tips. It grows only close to open water, along the stream corridor and the pool rim, and the tips glow brighter nearer the Life-Core. It follows the damp ground as the water table rises. (Prototype interpretation; not approved canon.)',
+    hint: 'A glowing fern beside water, once the soil is damp.',
+  },
+  {
+    id: 'mycoid', title: 'Mycoid Spire', category: 'Biology', region: 'basin',
+    text: 'A cluster of pale stalks topped by dark crimson caps with a spore-lit rim. It appears after the soil layer and thickens the cover on the foothills and around the crystal field edge. The caps shed fine spores that drift on the wind, which the scanner picks up as faint particles. (Prototype interpretation; not approved canon.)',
+    hint: 'Tall pale stalks with red caps, later in the recovery.',
+  },
+  {
+    id: 'lobloom', title: 'Lobloom Tree', category: 'Biology', region: 'basin',
+    text: 'A twisted dark trunk carrying five or six rounded canopy lobes. The tops are plum and crimson; the undersides glow coral and teal. It is the last stage of the recovery to appear and only on stable damp soil close to water or the conduit. Its glow is the strongest sign that the ground has become a living system. (Prototype interpretation; not approved canon.)',
+    hint: 'A tall tree with glowing underside lobes, at full recovery.',
+  },
+  {
+    id: 'kelp', title: 'Vent Kelp', category: 'Hydrology', region: 'basin',
+    text: 'Ribbon-like dark olive fronds that stream upward from the pool bed once the water has risen over them. The tips are rust red. They root in the warm mineral-rich silt near the spring and show that the pool is now a habitat and not just a puddle. (Prototype interpretation; not approved canon.)',
+    hint: 'Ribbons under the water of the pool.',
+  },
+  {
     id: 'panorama', title: 'Observation Panorama', category: 'Survey', region: 'observation',
     text: 'From here the whole route is visible: the black scar of the ridge, the red-lit crystal field, the Life-Core standing calmly in its crater, and the green basin with water running into it. The pulse is steady now. This is the end of the survey slice, and the start of whatever the planet does next.',
     hint: 'The view from the high ground east of the basin.',

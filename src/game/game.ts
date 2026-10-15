@@ -19,6 +19,9 @@ import { CONFIG } from './config'
 import { DISCOVERY_BY_ID, DISCOVERIES, type Discovery } from './discoveries'
 import { Explorer } from './explorer'
 import { Flora } from './flora'
+import { Spires } from './crystals'
+import { Biota } from './biota'
+import { BIOME_NAMES, biomeAt, stageAt } from './ecology'
 import { Creatures } from './creatures'
 import { extractModel } from './gfx'
 import { getHeightField, type HeightField } from './heightfield'
@@ -26,7 +29,7 @@ import { POI, POI_NAMES, regionAt, type RegionId } from './layout'
 import { OrbitScene } from './orbit'
 import { Props, VENT_RADIUS, type ModelSet, type Pickup } from './props'
 import { buildScannables, pickTarget, type ReadCtx, type Scannable } from './scannables'
-import { Lighting, SkyDome } from './sky'
+import { Lighting, SkyDome, buildEnvironment } from './sky'
 import { advance, defaultProgress, has, nodeCount, objectiveFor, STAGES, type Objective, type Progress, type Stage } from './state'
 import { createTerrain } from './terrain'
 import { U } from './uniforms'
@@ -82,6 +85,8 @@ export interface Hud {
   teaser: { time: number; duration: number; paused: boolean } | null
   speed: number
   region: string | null
+  /** Biome and ecological stage under the explorer. */
+  land: string | null
   hidden: boolean
 }
 
@@ -124,6 +129,8 @@ export class Game {
   private veins!: Veins
   private props!: Props
   private flora!: Flora
+  private spires!: Spires
+  private biota!: Biota
   private creatures!: Creatures
   private atmosphere!: Atmosphere
   private explorer!: Explorer
@@ -157,6 +164,7 @@ export class Game {
   private fadeBlack = 0
   private fadeTarget = 0
   private regionNow: RegionId | null = null
+  private landT = 0
   private saveClock = 0
   private ambClock = 0
   private wading = 0
@@ -174,7 +182,7 @@ export class Game {
     this.hud = {
       mode: 'boot', objective: objectiveFor(this.progress), prompt: null, integrity: 100, shards: 0, ore: 0, nodes: 0, vitality: 0, discoveries: 0,
       scanner: { active: false, state: 'idle', label: '', dist: 0, progress: 0, known: false }, tags: [], waypoint: null, caption: null,
-      haze: 0, black: 1, flash: 0, hurt: 0, yaw: 0, bearing: null, skipVisible: false, survey: false, walk: false, teaser: null, speed: 0, region: null, hidden: true,
+      haze: 0, black: 1, flash: 0, hurt: 0, yaw: 0, bearing: null, skipVisible: false, survey: false, walk: false, teaser: null, speed: 0, region: null, land: null, hidden: true,
     }
   }
 
@@ -202,7 +210,9 @@ export class Game {
     const settings = this.store.data.settings
     const preset = QUALITY_PRESETS[settings.quality]
     const scene = this.scene
-    scene.background = new THREE.Color('#2a0f0c')
+    scene.background = new THREE.Color('#0b0a0e')
+    scene.environment = buildEnvironment(this.renderer.gl)
+    scene.environmentIntensity = 0.7
     this.lighting = new Lighting(scene, preset.shadowMap, preset.shadows)
     this.fill = new THREE.DirectionalLight('#ffd6c2', 0.55)
     scene.add(this.fill, this.fill.target)
@@ -216,9 +226,13 @@ export class Game {
     this.props = new Props(this.hf, this.physics, this.models)
     scene.add(this.props.group)
     const dens = QUALITY_DENSITY[settings.quality]
+    this.spires = new Spires(this.hf, this.physics, dens.flora)
+    scene.add(this.spires.group)
     this.flora = new Flora(this.hf, this.models, dens.flora)
     this.floraDensity = dens.flora
     scene.add(this.flora.group)
+    this.biota = new Biota(this.hf, this.props.vents, dens.flora)
+    scene.add(this.biota.group)
     this.creatures = new Creatures(this.hf, this.models.grazer, 5)
     scene.add(this.creatures.group)
     this.atmosphere = new Atmosphere(this.veins.mainPath, dens.atmo)
@@ -251,7 +265,7 @@ export class Game {
     this.camRig.setIgnoredBody(this.explorer.body)
 
     this.cine = new Cinematics({ hf: this.hf, props: this.props, path: this.veins.mainPath })
-    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures })
+    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures, biota: this.biota, player: () => this.explorer.position })
 
     const ringGeo = new THREE.RingGeometry(0.9, 1, 64)
     for (let i = 0; i < 8; i += 1) {
@@ -293,11 +307,15 @@ export class Game {
     dispose(this.flora.group)
     this.flora = new Flora(this.hf, this.models, dens.flora)
     this.scene.add(this.flora.group)
+    this.scene.remove(this.biota.group)
+    dispose(this.biota.group)
+    this.biota = new Biota(this.hf, this.props.vents, dens.flora)
+    this.scene.add(this.biota.group)
     this.scene.remove(this.atmosphere.group)
     dispose(this.atmosphere.group)
     this.atmosphere = new Atmosphere(this.veins.mainPath, dens.atmo)
     this.scene.add(this.atmosphere.group)
-    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures })
+    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures, biota: this.biota, player: () => this.explorer.position })
     this.floraDensity = dens.flora
   }
 
@@ -791,6 +809,12 @@ export class Game {
       this.hud.region = region ? POI_NAMES[region] : null
       if (region) this.events.region(POI_NAMES[region])
     }
+    this.landT -= dt
+    if (this.landT <= 0) {
+      this.landT = 0.25
+      const bm = biomeAt(this.hf, feet.x, feet.z)
+      this.hud.land = `${BIOME_NAMES[bm]} - ${stageAt(feet.x, feet.z, this.view.vit).name}`
+    }
     const changed = advance(P, { inRegion: region ? { [region]: true } : {} })
     if (changed) this.onStageChanged(changed)
 
@@ -1251,6 +1275,8 @@ export class Game {
 
   // ---- camera + draw --------------------------------------------------------------------------
   private readonly surveyMove = new THREE.Vector3()
+  /** Test hook only: places the camera relative to the explorer for close-up inspection. */
+  debugCam: { dist: number; side: number; up: number; look: number; fov?: number } | null = null
 
   private updateCameraAndDraw(dt: number): void {
     const playingNow = this.mode === 'playing' && !this.journalOpen
@@ -1264,10 +1290,19 @@ export class Game {
     this.surveyMove.set(this.input.move.x, this.input.move.y, (this.input.held('jump') ? 1 : 0) - (this.input.held('descend') ? 1 : 0))
     this.camRig.update(dt, focus, look, { scanning: this.scanMode && playingNow, move: this.surveyMove, fast: this.input.held('sprint'), time: this.time })
     const cam = this.camRig.camera
+    if (this.debugCam) {
+      const d = this.debugCam
+      const fx = -Math.sin(this.explorer.yaw)
+      const fz = -Math.cos(this.explorer.yaw)
+      cam.position.set(rp.x + fx * d.dist - fz * d.side, rp.y - this.explorer.feetOffset + d.up, rp.z + fz * d.dist + fx * d.side)
+      cam.lookAt(rp.x, rp.y - this.explorer.feetOffset + d.look, rp.z)
+      cam.fov = d.fov ?? cam.fov
+      cam.updateProjectionMatrix()
+    }
     this.sky.mesh.position.copy(cam.position)
     this.fill.position.copy(cam.position)
     this.fill.target.position.copy(cam.position).add(cam.getWorldDirection(this.tmpDir).multiplyScalar(12))
-    this.lighting.update(this.time, this.view.vit, this.view.act, rp)
+    this.lighting.update(this.time, this.view.vit, this.view.act, rp, dt)
     const orbitPhase = (this.mode === 'opening' || this.mode === 'teaser') && this.cineOut.phase === 'orbit'
     if (orbitPhase) {
       const o = this.cineOut.orbit

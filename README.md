@@ -21,8 +21,18 @@ pnpm test     # unit tests (terrain reachability, loop, preview)
 5. **Recovery Basin** - a shockwave runs through the conduit channel; vitality rises over about 90 seconds, the terrain greens in a patchy front from the basin and core, a pool fills, flora grows (GPU-instanced) and mossgrazers appear. Scan two of the recovering features.
 6. **Observation Point** - climb up and scan the panorama. The slice then continues in free exploration.
 
-Objectives, a compass, waypoints, proximity prompts, a field journal (18 entries) and toasts guide the player.
+Objectives, a compass, waypoints, proximity prompts, a field journal (25 entries) and toasts guide the player.
 Scan readings are computed from live world state (distance, bearing, vitality, pulse stability, and so on).
+
+## Iteration 2: canon-pack visual pass
+
+Details, reference list, asset classes and test results: [`docs/CANON_PACK_INTEGRATION_REPORT.md`](docs/CANON_PACK_INTEGRATION_REPORT.md).
+
+- Biome-aware ground (`ecology.ts`, `terrain.ts`): fissure plains and crystal storm field cool into pioneer film, moss and soil as the recovery front passes.
+- Seven proposed species (`biota.ts`) grow by biome and vitality; each is scannable and logs a journal entry.
+- Rebuilt explorer (`character.ts`) with a face, swept hair, stubble, stand-up collar and the Life-Core gem; obsidian-glass spires, red moon, new sky and post chain.
+- HUD shows the biome and stage under the explorer.
+- Pack images are visual targets only; nothing from the pack is shipped. Species names are PROPOSED, not approved canon.
 
 ## Presentation
 
@@ -36,7 +46,7 @@ Scan readings are computed from live world state (distance, bearing, vitality, p
 
 ## Assets
 
-- 5 generated GLB models (crystal cluster, Life-Core pylon, mossgrazer, landing pod, frond-tree), simplified for instancing. Terrain, sky, explorer, rocks, water, conduit veins, particles, UI and audio are procedural/original.
+- 5 generated GLB models (iteration 1) (crystal cluster, Life-Core pylon, mossgrazer, landing pod, frond-tree), simplified for instancing. Terrain, sky, explorer, rocks, water, conduit veins, particles, UI and audio are procedural/original.
 - Fonts: bundled ManusCC0 (CC0). No third-party game IP is used. In-game lore is a working draft, not approved canon.
 
 ## Known limitations

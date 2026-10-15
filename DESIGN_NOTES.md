@@ -46,3 +46,14 @@ TODO NEXT: src/styles/main.css (classes used in ui.ts template: layer, boot, tit
 
 ## STATUS LOG 4
 Full loop verified in headless Chromium via /tmp/t4.mjs, t6.mjs, t7.mjs (playthrough, stabilize, persistence across reload, journal, pause). Remaining polish: tone terrain recovery color/reach (too lime/too wide), explorer fill-light added (DirectionalLight following camera), tests, favicon/OG, README/report, checkpoint.
+
+## STATUS LOG 5 (pack integration pass, after compaction)
+Done so far (all tsc-clean, visually checked via /tmp/shot.mjs at 960x540 medium quality):
+- terrain.ts: ground shader rewritten (warped voronoi plates, gated hot fissures w/ AA, hardpan salt crust, succession colours, root net, teal glints, bump via dFdx faded by distance). Uniforms added: uCrystal,uRidge,uFlash.
+- sky.ts rewritten: red cratered moon on key-light dir, storm cloud + lightning (uFlash), PMREM env map (buildEnvironment), fog/palette lerp.
+- renderer.ts: composer for medium/high (HalfFloat, MSAA 4 on high), bloom, GRADE pass (vignette, grain). exposure 1.3.
+- crystals.ts (NEW): obsidian-glass spires instanced (+ horizon giants, debris, colliders).
+- biota.ts (NEW): Lantern Lichen, Thorn Sedge, Glimmer Fern, Mycoid Spire, Lobloom Tree, Vent Kelp, Gas Plume Mat; biome+age placement; exposes specimens for scanning. Needs: scannables + discoveries entries (TODO), HUD biome/stage readout (TODO).
+- character.ts (NEW) wired through explorer.buildModel(): lathe limbs, bevelled plates, sculpted head (stubble shell, hair locks, eyes), Life-Core hex gem. Needs closeup check (TODO: debug cam).
+- ecology.ts: stages + biomeAt (exists).
+Remaining TODO: scan targets/journal for new species; HUD "biome - stage" readout; teaser tweaks; character closeup test; run full playthrough test + reload persistence; README/report listing used refs (docs/CANON_REFERENCE_NOTES.md), commit+push.

@@ -135,7 +135,7 @@ export class Ui {
   <div id="scanVignette" class="scan-vignette"></div>
   <div id="objective" class="panel objective"><div class="label">Objective</div><div id="objTitle" class="obj-title"></div><div id="objDetail" class="obj-detail"></div><div id="objProgress" class="obj-progress"></div><div id="objDist" class="obj-dist"></div></div>
   <div class="compass"><div id="compassTrack" class="compass-track"></div><div id="compassMark" class="compass-mark hidden">&#9670;</div><div class="compass-center"></div></div>
-  <div class="panel topright"><div id="regionName" class="region-name"></div><div class="stat-row"><span>Journal</span><b id="statDisc">0/18</b></div><div class="stat-row"><span>Recovery</span><b id="statVit">0%</b></div><div class="mini-bar"><div id="vitBar"></div></div></div>
+  <div class="panel topright"><div id="regionName" class="region-name"></div><div id="landName" class="land-name"></div><div class="stat-row"><span>Journal</span><b id="statDisc">0/25</b></div><div class="stat-row"><span>Recovery</span><b id="statVit">0%</b></div><div class="mini-bar"><div id="vitBar"></div></div></div>
   <div id="regionBanner" class="region-banner"></div>
   <div class="panel bottomleft"><div class="stat-row"><span>Suit</span><b id="statSuit">100%</b></div><div class="mini-bar suit"><div id="suitBar"></div></div><div class="chips"><span class="chip"><i class="ico shard"></i><b id="chipShards">0</b> shards</span><span class="chip"><i class="ico ore"></i><b id="chipOre">0</b> ore</span><span class="chip"><i class="ico node"></i><b id="chipNodes">0</b>/3 nodes</span></div></div>
   <div id="prompt" class="prompt hidden"><span class="key">E</span><span id="promptText"></span><div id="promptHold" class="hold hidden"><div id="promptHoldBar"></div></div></div>
@@ -569,6 +569,7 @@ ${check('hints', 'Show on-screen key hints', s.hints)}
     this.setText('chipOre', String(h.ore))
     this.setText('chipNodes', String(h.nodes))
     this.setText('regionName', h.region ?? 'Open ground')
+    this.setText('landName', h.land ?? '')
     this.setText('pauseObj', `${h.objective.title}${h.objective.progress ? ` (${h.objective.progress})` : ''}`)
 
     // Region banner

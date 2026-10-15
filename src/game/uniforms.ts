@@ -17,6 +17,11 @@ export const U = {
   uWaterMin: { value: -8 },
   uBasin: { value: new THREE.Vector2(POI.basin.x, POI.basin.z) },
   uCore: { value: new THREE.Vector2(POI.core.x, POI.core.z) },
+  uCrystal: { value: new THREE.Vector2(POI.crystal.x, POI.crystal.z) },
+  uRidge: { value: new THREE.Vector2(POI.ridge.x, POI.ridge.z) },
+  /** Lightning / storm flash 0..1 (sky + scene fill). */
+  uFlash: { value: 0 },
+  uMoonDir: { value: new THREE.Vector3(-0.55, 0.32, -0.77).normalize() },
   uSunDir: { value: new THREE.Vector3(0.5, 0.4, 0.4).normalize() },
   uSunCol: { value: new THREE.Color('#ff9a66') },
   uHorizon: { value: new THREE.Color('#7a2a1c') },

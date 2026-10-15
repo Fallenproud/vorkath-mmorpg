@@ -126,12 +126,12 @@ export class Atmosphere {
       this.motes[key] = m
       this.group.add(m.points)
     }
-    add('dust', { count: q(900), extent: new THREE.Vector3(130, 36, 130), vel: new THREE.Vector3(3.2, 0.1, 1.2), color: '#c68a68', size: 14, additive: false, follow: true }, 1)
-    add('spores', { count: q(420), extent: new THREE.Vector3(90, 18, 90), vel: new THREE.Vector3(0.6, 0.35, 0.2), color: '#d8e6a0', size: 10, additive: true, twinkle: 0.7, follow: true }, 2)
-    add('embers', { count: q(260), extent: new THREE.Vector3(60, 22, 60), vel: new THREE.Vector3(0.2, 3.4, 0.1), color: '#ff6a2a', size: 10, additive: true, twinkle: 0.8, center: new THREE.Vector3(POI.core.x, 12, POI.core.z) }, 3)
-    add('corelife', { count: q(320), extent: new THREE.Vector3(50, 30, 50), vel: new THREE.Vector3(0, 2.2, 0), color: '#35f2d2', size: 12, additive: true, twinkle: 0.5, center: new THREE.Vector3(POI.core.x, 14, POI.core.z) }, 4)
-    add('sparkle', { count: q(240), extent: new THREE.Vector3(110, 12, 110), vel: new THREE.Vector3(0.05, 0.25, 0.05), color: '#8ff7e8', size: 9, additive: true, twinkle: 1, center: new THREE.Vector3(POI.crystal.x, 6, POI.crystal.z) }, 5)
-    add('mist', { count: q(120), extent: new THREE.Vector3(120, 5, 120), vel: new THREE.Vector3(0.8, 0.02, 0.4), color: '#cfe6df', size: 70, additive: false, center: new THREE.Vector3(POI.basin.x, 2, POI.basin.z) }, 6)
+    add('dust', { count: q(900), extent: new THREE.Vector3(130, 36, 130), vel: new THREE.Vector3(3.2, 0.1, 1.2), color: '#6a3a34', size: 6, additive: false, follow: true }, 1)
+    add('spores', { count: q(420), extent: new THREE.Vector3(90, 18, 90), vel: new THREE.Vector3(0.6, 0.35, 0.2), color: '#d8e6a0', size: 1.0, additive: true, twinkle: 0.7, follow: true }, 2)
+    add('embers', { count: q(260), extent: new THREE.Vector3(60, 22, 60), vel: new THREE.Vector3(0.2, 3.4, 0.1), color: '#ff6a2a', size: 0.9, additive: true, twinkle: 0.8, center: new THREE.Vector3(POI.core.x, 12, POI.core.z) }, 3)
+    add('corelife', { count: q(320), extent: new THREE.Vector3(50, 30, 50), vel: new THREE.Vector3(0, 2.2, 0), color: '#35f2d2', size: 1.0, additive: true, twinkle: 0.5, center: new THREE.Vector3(POI.core.x, 14, POI.core.z) }, 4)
+    add('sparkle', { count: q(240), extent: new THREE.Vector3(110, 12, 110), vel: new THREE.Vector3(0.05, 0.25, 0.05), color: '#8ff7e8', size: 1.1, additive: true, twinkle: 1, center: new THREE.Vector3(POI.crystal.x, 6, POI.crystal.z) }, 5)
+    add('mist', { count: q(120), extent: new THREE.Vector3(120, 5, 120), vel: new THREE.Vector3(0.8, 0.02, 0.4), color: '#7f9a92', size: 60, additive: false, center: new THREE.Vector3(POI.basin.x, 2, POI.basin.z) }, 6)
 
     const n = 70
     const pos = new Float32Array(n * 3)
@@ -191,13 +191,13 @@ export class Atmosphere {
     }
     const m = this.motes
     // Dust thins as the sky clears; wind raises it.
-    m.dust.opacity = (0.5 - 0.22 * vit) * Math.min(1.2, 0.6 + wind * 0.5)
-    m.dust.mat.uniforms.uColor.value.set(vit > 0.4 ? '#c8a888' : '#c27c58')
+    m.dust.opacity = (0.3 - 0.12 * vit) * Math.min(1.2, 0.6 + wind * 0.5)
+    m.dust.mat.uniforms.uColor.value.set(vit > 0.4 ? '#8a7664' : '#6a3a34')
     m.spores.opacity = THREE.MathUtils.smoothstep(vit, 0.2, 0.6) * 0.9
     m.embers.opacity = stabilized ? Math.max(0, 0.15 - vit) : 0.95 - act * 0.55
     m.corelife.opacity = 0.18 + act * 0.8
     m.sparkle.opacity = 0.55 + act * 0.2
-    m.mist.opacity = THREE.MathUtils.smoothstep(vit, 0.15, 0.7) * 0.22
+    m.mist.opacity = THREE.MathUtils.smoothstep(vit, 0.15, 0.7) * 0.1
 
     // Energy motes streaming from the core toward the basin along the vein as activation grows.
     const flowMat = this.flow.material as THREE.PointsMaterial

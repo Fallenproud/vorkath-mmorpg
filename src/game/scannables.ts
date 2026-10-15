@@ -5,6 +5,9 @@ import type { Props } from './props'
 import { VENT_RADIUS } from './props'
 import type { Flora } from './flora'
 import type { Creatures } from './creatures'
+import type { Biota, SpeciesId } from './biota'
+import { SPECIES } from './biota'
+import { BIOME_NAMES, biomeAt, stageAt } from './ecology'
 import { growthFront, nodeCount, type Progress } from './state'
 import { U } from './uniforms'
 
@@ -44,8 +47,8 @@ const bearing = (from: THREE.Vector3, to: THREE.Vector3) => {
 }
 const dist = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z)
 
-export function buildScannables(env: { props: Props; hf: HeightField; flora: Flora; creatures: Creatures }): Scannable[] {
-  const { props, hf, flora, creatures } = env
+export function buildScannables(env: { props: Props; hf: HeightField; flora: Flora; creatures: Creatures; biota: Biota; player: () => THREE.Vector3 }): Scannable[] {
+  const { props, hf, flora, creatures, biota } = env
   const always = () => true
   const out: Scannable[] = []
   const add = (s: Scannable) => out.push(s)
@@ -231,6 +234,73 @@ export function buildScannables(env: { props: Props; hf: HeightField; flora: Flo
       ['Route', 'Ridge, crystal field, core, basin'],
     ],
   })
+  // ---- Biome-dependent species (scan the nearest grown individual) --------------------------------
+  const GROW = 0.1
+  const bioDefs: { id: SpeciesId; discovery: string; radius: number; lift: number; note: string; habitat: string }[] = [
+    { id: 'gasmat', discovery: 'gasmat', radius: 1.9, lift: 0.1, note: 'Condensed sulphur crust', habitat: 'Active discharge vents' },
+    { id: 'lichen', discovery: 'lantern', radius: 1.6, lift: 0.1, note: 'Glowing pioneer pads', habitat: 'Cooled rock behind the front' },
+    { id: 'sedge', discovery: 'sedge', radius: 1.8, lift: 0.7, note: 'Red-tipped blade tussock', habitat: 'Basin soil and foothills' },
+    { id: 'fern', discovery: 'fern', radius: 1.8, lift: 0.7, note: 'Teal-tipped arching fronds', habitat: 'Stream corridor, pool rim' },
+    { id: 'mycoid', discovery: 'mycoid', radius: 1.8, lift: 0.9, note: 'Stalked crimson caps', habitat: 'Foothills and crystal-field edge' },
+    { id: 'lobloom', discovery: 'lobloom', radius: 4.2, lift: 3.4, note: 'Glowing-lobe canopy tree', habitat: 'Damp stable soil near water' },
+    { id: 'kelp', discovery: 'kelp', radius: 2.4, lift: 1.2, note: 'Pool-bed ribbon fronds', habitat: 'Warm silt under open water' },
+  ]
+  for (const b of bioDefs) {
+    const def = SPECIES.find(x => x.id === b.id)!
+    const list = biota.specimens[b.id]
+    if (!list.length) continue
+    const grown = (vit: number, t: number) => b.id === 'gasmat' || vit > t + GROW
+    const nearest = (vit: number) => {
+      const me = env.player()
+      let best = list[0]
+      let bd = Infinity
+      for (const sp of list) {
+        if (!grown(vit, sp.threshold)) continue
+        const dd = Math.hypot(sp.pos.x - me.x, sp.pos.z - me.z)
+        if (dd < bd) {
+          bd = dd
+          best = sp
+        }
+      }
+      return best
+    }
+    let cachedVit = 0
+    add({
+      key: `bio-${b.id}`, discovery: b.discovery, name: def.name, pos: () => {
+        const sp = nearest(cachedVit)
+        const p = sp.pos.clone().add(new THREE.Vector3(0, b.lift, 0))
+        if (b.id === 'gasmat') {
+          // Aim at the crust rim, to the side of the line to the explorer, so it is distinct from the vent mouth itself.
+          const me = env.player()
+          const dx = me.x - sp.pos.x
+          const dz = me.z - sp.pos.z
+          const l = Math.hypot(dx, dz) || 1
+          p.x += (-dz / l) * 4.6
+          p.z += (dx / l) * 4.6
+          p.y = hf.heightAt(p.x, p.z) + 0.1
+        }
+        return p
+      }, radius: b.radius, range: 42,
+      enabled: (c) => {
+        cachedVit = c.vit
+        return list.some(sp => grown(c.vit, sp.threshold))
+      },
+      readings: (c, self) => {
+        const sp = nearest(c.vit)
+        const age = c.vit - sp.threshold
+        const stage = stageAt(sp.pos.x, sp.pos.z, c.vit)
+        return [
+          ['Form', b.note],
+          ['Habitat', b.habitat],
+          ['Biome here', BIOME_NAMES[biomeAt(hf, sp.pos.x, sp.pos.z)]],
+          ['Ground stage', stage.name],
+          ['Growth', b.id === 'gasmat' ? 'Mineral deposit' : pct(age / 0.3)],
+          ['Colony size', `${biota.counts[b.id]} placed in this slice`],
+          ['Distance', `${Math.round(dist(c.player, self))} m`],
+        ]
+      },
+    })
+  }
   return out
 }
 

@@ -3,12 +3,133 @@ import { RAPIER, type Physics } from '../engine/physics'
 import { CELL, WORLD_HALF } from './layout'
 import { GRID, type HeightField } from './heightfield'
 import { U } from './uniforms'
+import { REACH } from './ecology'
 
 const NOISE = /* glsl */ `
 float h21(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
   return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
 float fbm4(vec2 p){ float s = 0., a = .5; for (int i = 0; i < 4; i++){ s += a * vn(p); p = p * 2.03 + 17.1; a *= .5; } return s / .9375; }
+`
+
+const VORONOI = /* glsl */ `
+vec3 vor(vec2 p){ vec2 ip = floor(p), fp = fract(p); float d1 = 8., d2 = 8., id = 0.;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){ vec2 g = vec2(float(i), float(j)); vec2 o = vec2(h21(ip + g), h21(ip + g + 71.3)); vec2 r = g + o - fp; float d = dot(r, r);
+    if (d < d1){ d2 = d1; d1 = d; id = h21(ip + g + 13.7); } else if (d < d2){ d2 = d; } }
+  return vec3(sqrt(d1), sqrt(d2), id); }
+`
+
+const GROUND_FRAG = /* glsl */ `
+{
+  vec3 N = normalize(vWNrm);
+  float slope = 1.0 - N.y;
+  vec2 P = vWPos.xz;
+  float camD = length(vViewPosition);
+  float fine = 1.0 - smoothstep(8.0, 46.0, camD);
+  float mid = 1.0 - smoothstep(30.0, 130.0, camD);
+  float steep = smoothstep(0.2, 0.55, slope);
+  vec2 Pc = P + vWPos.y * vec2(1.7, 0.9) * steep;
+  float nLarge = fbm4(P * 0.03);
+  float nMid = fbm4(P * 0.12 + 5.0);
+  float nFine = mix(0.5, fbm4(Pc * 0.9), mid);
+  float strata = sin(vWPos.y * 0.9 + nLarge * 9.0 + nMid * 3.0) * 0.5 + 0.5;
+
+  // Ecological age of this exact point: 0 when the succession front arrives, negative while still scar.
+  float rb = distance(P, uBasin);
+  float rc = distance(P, uCore);
+  float pass = min(rb / ${REACH.basin.toFixed(1)}, rc / ${REACH.core.toFixed(1)});
+  float age = uVit - pass + (nMid - 0.5) * 0.11;
+
+  // --- Scar rock: cracked plates with fissures (VP-VIS-011/012, Scar Tile Atlas I 05 Fissure Plains) ---
+  vec2 warp = vec2(fbm4(Pc * 0.11), fbm4(Pc * 0.11 + 7.3)) - 0.5;
+  vec2 warp2 = (vec2(vn(Pc * 0.9), vn(Pc * 0.9 + 3.1)) - 0.5) * fine;
+  vec2 Pw = Pc + warp * 8.0 + warp2 * 0.9;
+  vec3 vA = vor(Pw * 0.30);
+  float edgeA = vA.y - vA.x;
+  vec3 vB = vor(Pw * 1.35 + 3.0);
+  float edgeB = mix(1.0, vB.y - vB.x, fine);
+  float zoneF = smoothstep(0.30, 0.72, fbm4(P * 0.022 + 9.0));
+  float rcr = distance(P, uCrystal);
+  float rr = distance(P, uRidge);
+  zoneF = clamp(zoneF + smoothstep(60.0, 8.0, rcr) * 0.3 + smoothstep(50.0, 6.0, rr) * 0.3, 0.0, 1.0);
+  float gateA = smoothstep(0.47, 0.63, fbm4(P * 0.07 + 3.0));
+  float gateB = smoothstep(0.50, 0.70, fbm4(P * 0.2 + 1.0));
+  float aaA = fwidth(edgeA) * 1.4;
+  float aaB = fwidth(edgeB) * 1.4;
+  float crackA = (1.0 - smoothstep(0.0, max(0.045 + 0.05 * nMid, aaA), edgeA)) * zoneF * gateA;
+  float crackB = (1.0 - smoothstep(0.0, max(0.07, aaB), edgeB)) * zoneF * gateB * 0.7 * fine;
+  float crack = max(crackA, crackB) * (1.0 - 0.85 * steep);
+  float crackCore = (1.0 - smoothstep(0.0, 0.016, min(edgeA, mix(1.0, edgeB, step(0.01, crackB)))));
+  vec3 plateTint = mix(vec3(0.028, 0.029, 0.034), vec3(0.105, 0.108, 0.118), vA.z);
+  vec3 rock = plateTint * (0.75 + 0.55 * nFine);
+  rock = mix(rock, vec3(0.20, 0.17, 0.16), strata * smoothstep(0.25, 0.65, slope) * 0.55);
+  rock = mix(rock, vec3(0.13, 0.022, 0.02), smoothstep(0.80, 0.94, nLarge + strata * 0.08) * (0.25 + 0.75 * steep));
+  float ash = smoothstep(0.45, 0.75, fbm4(P * 0.045 + 21.0)) * smoothstep(0.5, 0.08, slope);
+  rock = mix(rock, vec3(0.105, 0.098, 0.100) * (0.7 + 0.6 * nMid), ash * 0.75);
+  vec3 col = rock * mix(0.35, 1.0, 1.0 - crack);
+
+  // --- Basin hardpan: dark cracked mud with pale mineral crust on the polygon rims (VP-VIS-017/031) ---
+  float basinMask = (1.0 - smoothstep(uWaterMin + 0.4, uWaterMin + 6.5, vWPos.y)) * (1.0 - smoothstep(34.0, 58.0, rb));
+  float rim = 1.0 - smoothstep(0.0, 0.11, edgeA);
+  vec3 hardpan = mix(vec3(0.20, 0.13, 0.115), vec3(0.34, 0.25, 0.22), nMid) * mix(0.55, 1.0, smoothstep(0.0, 0.2, edgeA));
+  hardpan = mix(hardpan, vec3(0.62, 0.56, 0.52), rim * 0.65 * smoothstep(0.35, 0.65, nLarge));
+  col = mix(col, hardpan, basinMask * 0.9);
+  crack *= 1.0 - basinMask;
+  float wet = smoothstep(0.08, 0.5, uVit) * (1.0 - smoothstep(uWaterY, uWaterY + 3.2, vWPos.y)) * (1.0 - smoothstep(30.0, 58.0, rb));
+  col *= 1.0 - 0.6 * wet;
+
+  // --- Succession (Frontier / Living tile atlases VP-VIS-042..044, life-spread timeline VP-VIS-005) ---
+  float flatOk = smoothstep(0.62, 0.14, slope);
+  float altOk = 1.0 - smoothstep(20.0, 36.0, vWPos.y) * 0.85;
+  float ok = flatOk * altOk;
+  // 1 weathering: ash and silica crust lift the blacks
+  float w1 = smoothstep(-0.005, 0.03, age);
+  col = mix(col, col * vec3(1.1, 1.02, 1.0) + vec3(0.035, 0.034, 0.034), w1 * 0.55);
+  // 2 pioneer: rust-red soil, lichen / microbial film
+  float pS = smoothstep(0.04, 0.13, age) * mix(0.45, 1.0, ok);
+  vec3 rust = mix(vec3(0.085, 0.040, 0.030), vec3(0.150, 0.065, 0.040), nMid) * (0.8 + 0.5 * nFine);
+  col = mix(col, rust, pS * smoothstep(0.1, 0.5, ok + 0.25));
+  float filmN = fbm4(P * 0.55 + 2.0) + (age - 0.1) * 1.2;
+  float film = smoothstep(0.48, 0.68, filmN) * smoothstep(0.05, 0.14, age) * (0.5 + 0.5 * ok);
+  vec3 lichenCol = mix(vec3(0.17, 0.19, 0.045), vec3(0.09, 0.13, 0.05), nFine);
+  lichenCol = mix(lichenCol, vec3(0.095, 0.05, 0.12), step(0.8, vn(P * 0.21 + 4.0)) * 0.7);
+  col = mix(col, lichenCol, film * 0.9);
+  // 3 soil and moss mats
+  float soilW = smoothstep(0.14, 0.28, age) * ok;
+  vec3 humus = mix(vec3(0.042, 0.030, 0.026), vec3(0.070, 0.048, 0.034), nMid);
+  col = mix(col, humus, soilW * 0.85);
+  float mossN = fbm4(P * 0.34 + 7.0) + (age - 0.22) * 1.5;
+  float moss = smoothstep(0.42, 0.62, mossN) * smoothstep(0.15, 0.3, age) * (0.4 + 0.6 * ok);
+  vec3 mossCol = mix(vec3(0.030, 0.085, 0.045), vec3(0.075, 0.150, 0.060), nFine);
+  mossCol = mix(mossCol, vec3(0.20, 0.052, 0.030), step(0.86, vn(P * 0.4 + 11.0)) * smoothstep(0.3, 0.5, age));
+  col = mix(col, mossCol, moss);
+  // 4-5 shrub layer and mature closed cover
+  float matW = smoothstep(0.34, 0.62, age) * ok;
+  vec3 canopyFloor = mix(vec3(0.040, 0.095, 0.045), vec3(0.085, 0.150, 0.065), nMid);
+  col = mix(col, canopyFloor, matW * 0.8);
+
+  // --- Emissive: hot fissures cool as the front passes; teal mineral films; root network; stabilisation ring ---
+  float cool = 1.0 - smoothstep(0.0, 0.07, age);
+  float flicker = 0.75 + 0.25 * sin(uTime * 0.9 + vA.z * 6.283 + nLarge * 18.0);
+  vec3 magma = mix(vec3(0.60, 0.040, 0.020), vec3(1.0, 0.36, 0.07), smoothstep(0.35, 0.95, nMid + crackB * 0.4));
+  tEmis = mix(magma, vec3(1.0, 0.62, 0.25), crackCore * crack) * crack * cool * flicker * 1.5;
+  float ring = exp(-pow((rc - uPulse) / 5.0, 2.0)) * step(0.5, uPulse) * (1.0 - smoothstep(180.0, 320.0, uPulse));
+  float glintBand = smoothstep(0.0, 0.03, age) * (1.0 - smoothstep(0.08, 0.2, age));
+  float glint = smoothstep(0.9, 0.97, vn(Pc * 2.1)) * fine * (glintBand * 0.8 + (1.0 - smoothstep(-0.02, 0.0, age)) * (0.08 + uAct) * smoothstep(170.0, 15.0, rc)) * 0.3;
+  tEmis += vec3(0.08, 0.95, 0.80) * ring * 0.9 + vec3(0.04, 0.72, 0.62) * glint;
+  float net = (1.0 - smoothstep(0.0, max(0.02, aaA), edgeA)) * mid * smoothstep(0.06, 0.16, age) * (1.0 - smoothstep(0.3, 0.55, age));
+  vec3 netCol = mix(vec3(0.85, 0.20, 0.06), vec3(0.05, 0.78, 0.68), smoothstep(90.0, 25.0, rc));
+  tEmis += netCol * net * 0.3 * (0.6 + 0.4 * sin(uTime * 1.3 + vA.z * 9.0));
+
+  float cover = max(max(film, moss), soilW);
+  float glass = smoothstep(0.55, 0.8, vA.z) * (1.0 - ash) * (1.0 - w1);
+  tRough = mix(0.88, 0.46, glass);
+  tRough = mix(tRough, 0.96, cover);
+  tRough = mix(tRough, 0.4, wet * (1.0 - moss));
+  tBump = smoothstep(0.0, 0.22, edgeA) * 0.9 + vn(Pc * 1.7) * 0.35 * mid + vn(Pc * 5.3) * 0.2 * fine - (1.0 - smoothstep(0.0, 0.07, edgeB)) * 0.3 * fine;
+  tBump *= mix(1.0, 0.45, max(soilW, moss));
+  diffuseColor.rgb = col;
+}
 `
 
 /**
@@ -48,10 +169,11 @@ export function createTerrain(hf: HeightField, physics: Physics): THREE.Mesh {
   geo.computeVertexNormals()
   geo.computeBoundingSphere()
 
-  const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, metalness: 0 })
+  const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, metalness: 0, envMapIntensity: 0.3 })
   mat.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, {
       uTime: U.uTime, uVit: U.uVit, uAct: U.uAct, uPulse: U.uPulse, uWaterY: U.uWaterY, uWaterMin: U.uWaterMin, uBasin: U.uBasin, uCore: U.uCore,
+      uCrystal: U.uCrystal, uRidge: U.uRidge,
     })
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
@@ -61,74 +183,13 @@ export function createTerrain(hf: HeightField, physics: Physics): THREE.Mesh {
         '#include <common>',
         `#include <common>
 uniform float uTime, uVit, uAct, uPulse, uWaterY, uWaterMin;
-uniform vec2 uBasin, uCore;
+uniform vec2 uBasin, uCore, uCrystal, uRidge;
 varying vec3 vWPos; varying vec3 vWNrm;
 float tRough; vec3 tEmis; float tBump;
-${NOISE}`,
+${NOISE}
+${VORONOI}`,
       )
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-{
-  vec3 N = normalize(vWNrm);
-  float slope = 1.0 - N.y;
-  vec2 P = vWPos.xz;
-  float nLarge = fbm4(P * 0.03);
-  float nMid = fbm4(P * 0.12 + 5.0);
-  float nFine = fbm4(P * 0.9);
-  float strata = sin(vWPos.y * 2.3 + nLarge * 7.0) * 0.5 + 0.5;
-
-  // Rock language: obsidian, charcoal and graphite bands.
-  vec3 rock = mix(vec3(0.022, 0.021, 0.025), vec3(0.092, 0.084, 0.088), smoothstep(0.25, 0.75, nMid));
-  rock = mix(rock, vec3(0.19, 0.17, 0.165), strata * smoothstep(0.2, 0.7, slope) * 0.75);
-  rock = mix(rock, vec3(0.20, 0.045, 0.035), smoothstep(0.78, 0.9, nLarge + strata * 0.1) * smoothstep(0.3, 0.6, slope) * 0.9);
-  rock *= 0.72 + 0.55 * nFine;
-
-  // Bloodstone dust settles on flatter ground.
-  vec3 blood = vec3(0.30, 0.052, 0.038) * (0.55 + 0.85 * nMid);
-  float dust = smoothstep(0.32, 0.72, nLarge + (1.0 - slope) * 0.3) * smoothstep(0.55, 0.06, slope);
-  vec3 col = mix(rock, blood, dust * 0.82);
-
-  // Fractured crust.
-  float cr = smoothstep(0.0, 0.1, abs(vn(P * 0.33) - 0.5) * 2.0);
-  col *= mix(0.4, 1.0, cr);
-
-  // Basin hardpan: pale cracked mud that darkens as groundwater returns.
-  float rb = distance(P, uBasin);
-  float basinMask = (1.0 - smoothstep(uWaterMin + 0.4, uWaterMin + 6.5, vWPos.y)) * (1.0 - smoothstep(34.0, 58.0, rb));
-  float poly = smoothstep(0.0, 0.07, abs(vn(P * 0.55) - 0.5) * 2.0) * smoothstep(0.0, 0.07, abs(vn(P * 1.3 + 9.0) - 0.5) * 2.0);
-  vec3 hardpan = mix(vec3(0.34, 0.27, 0.22), vec3(0.50, 0.40, 0.31), nMid) * mix(0.35, 1.0, poly);
-  col = mix(col, hardpan, basinMask * 0.9);
-  float wet = smoothstep(0.08, 0.5, uVit) * (1.0 - smoothstep(uWaterY, uWaterY + 3.2, vWPos.y)) * (1.0 - smoothstep(30.0, 58.0, rb));
-  col *= 1.0 - 0.62 * wet;
-
-  // Ecological succession front: spreads from the basin and the Life-Core as vitality rises.
-  float rc = distance(P, uCore);
-  float f1 = uVit * 125.0 - rb;
-  float f2 = uVit * 70.0 - rc;
-  float front = max(smoothstep(0.0, 34.0, f1), smoothstep(0.0, 26.0, f2));
-  float flatOk = smoothstep(0.55, 0.12, slope);
-  float altOk = 1.0 - smoothstep(18.0, 34.0, vWPos.y) * 0.85;
-  float patchN = fbm4(P * 0.07 + 31.0) * 0.7 + fbm4(P * 0.35) * 0.3;
-  float cov = front * flatOk * altOk;
-  cov = smoothstep(0.22, 0.58, cov * 1.25 + (patchN - 0.5) * 0.9 - 0.1 * (1.0 - uVit));
-  vec3 moss = mix(vec3(0.04, 0.15, 0.11), vec3(0.09, 0.28, 0.20), nFine);
-  vec3 lush = mix(vec3(0.06, 0.20, 0.11), vec3(0.15, 0.31, 0.14), nMid);
-  vec3 soil = vec3(0.065, 0.042, 0.034);
-  vec3 green = mix(moss, lush, smoothstep(0.35, 0.85, uVit));
-  vec3 grown = mix(soil, green, smoothstep(0.1, 0.5, cov));
-  col = mix(col, col * vec3(0.7, 0.62, 0.6), smoothstep(0.0, 0.4, front) * 0.5 * (1.0 - cov));
-  col = mix(col, grown, cov);
-
-  // Emissive: the stabilization shockwave and faint Life-Core mineral glints in bare rock.
-  float ring = exp(-pow((rc - uPulse) / 5.0, 2.0)) * step(0.5, uPulse) * (1.0 - smoothstep(180.0, 320.0, uPulse));
-  float glint = smoothstep(0.84, 0.92, vn(P * 0.8)) * (1.0 - cov) * (0.12 + uAct) * smoothstep(170.0, 15.0, rc) * 0.55;
-  tEmis = vec3(0.08, 0.95, 0.80) * ring * 0.9 + vec3(0.04, 0.72, 0.62) * glint;
-  tRough = mix(0.96, 0.42, wet * (1.0 - cov)) * mix(1.0, 0.97, cov);
-  tBump = vn(P * 2.6) * 0.6 + vn(P * 7.3) * 0.3 + (1.0 - cr) * -0.5;
-  diffuseColor.rgb = col;
-}`,
-      )
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${GROUND_FRAG}`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = tRough;')
       .replace(
         '#include <normal_fragment_maps>',
@@ -139,12 +200,12 @@ ${NOISE}`,
   vec3 r1 = cross(dpdy, normal); vec3 r2 = cross(normal, dpdx);
   float det = dot(dpdx, r1);
   vec3 grad = sign(det) * (hx * r1 + hy * r2);
-  normal = normalize(abs(det) * normal - 0.35 * grad);
+  normal = normalize(abs(det) * normal - 0.35 * grad * (1.0 - smoothstep(14.0, 70.0, length(vViewPosition))));
 }`,
       )
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += tEmis;')
   }
-  mat.customProgramCacheKey = () => 'vorkath-terrain-v1'
+  mat.customProgramCacheKey = () => 'vorkath-terrain-v2'
 
   const mesh = new THREE.Mesh(geo, mat)
   mesh.receiveShadow = true

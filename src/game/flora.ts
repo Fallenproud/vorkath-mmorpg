@@ -11,7 +11,7 @@ import { U } from './uniforms'
  * per-instance threshold (`aThr`), with a gentle wind sway. All growth runs on the GPU, so the
  * recovery stays smooth and costs no CPU per plant.
  */
-function growable(base: THREE.Material, sway: number, extra?: (m: THREE.MeshStandardMaterial) => void): THREE.MeshStandardMaterial {
+export function growable(base: THREE.Material, sway: number, extra?: (m: THREE.MeshStandardMaterial) => void): THREE.MeshStandardMaterial {
   const mat = base.clone() as THREE.MeshStandardMaterial
   extra?.(mat)
   mat.onBeforeCompile = shader => {
@@ -89,7 +89,7 @@ export class Flora {
     // 1. Pioneer moss mats: first colonisers, low and wide.
     {
       const items = sample(Math.round(1300 * density), { maxSlope: 34, maxY: 18, thrOffset: 0.0 })
-      const geo = new THREE.IcosahedronGeometry(0.5, 1)
+      const geo = new THREE.IcosahedronGeometry(0.5, 0)
       geo.scale(1, 0.32, 1)
       geo.translate(0, 0.05, 0)
       items.forEach(it => {
@@ -183,8 +183,8 @@ export class Flora {
         this.group.add(mesh)
         return items
       }
-      const big = make(Math.max(4, Math.round(10 * density)), 3.4, 6.2, 0.3, 40)
-      make(Math.round(18 * density), 1.1, 2.2, 0.2, 55)
+      const big = make(Math.max(4, Math.round(8 * density)), 3.4, 6.2, 0.3, 40)
+      make(Math.round(7 * density), 1.1, 2.2, 0.2, 55)
       big.forEach((it, i) => this.trees.push({ pos: new THREE.Vector3(it.x, it.y, it.z), threshold: big.thr[i] }))
       this.trees.sort((a, b) => a.threshold - b.threshold)
     }

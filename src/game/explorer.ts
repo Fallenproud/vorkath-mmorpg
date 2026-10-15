@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { RAPIER, type Physics } from '../engine/physics'
 import { CONFIG } from './config'
+import { buildExplorerModel } from './character'
 
 const mat = (color: string, rough = 0.5, metal = 0.2, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra })
@@ -85,6 +86,7 @@ export class Explorer {
     this.controller.setApplyImpulsesToDynamicBodies(false)
     this.scannerScreen = this.buildModel()
     this.model.position.y = -this.feetOffset
+    this.model.scale.setScalar(0.975)
     this.root.add(this.model)
     this.root.position.copy(spawn).y += this.feetOffset
     physics.bind(this.body, this.root)
@@ -277,110 +279,44 @@ export class Explorer {
     this.head.rotation.y = Math.sin(time * 0.6) * 0.08 * (1 - stride) * (1 - sb)
     this.head.rotation.x = -0.02 + Math.sin(time * 0.37) * 0.02 - sb * 0.1
     const glow = 0.5 + 0.5 * Math.sin(time * 3)
-    this.visorMat.emissiveIntensity = 1.8 + glow * 0.9 + sb * 1.2
+    this.visorMat.emissiveIntensity = 0.8 + glow * 0.4 + sb * 0.9
     this.chestMat.emissiveIntensity = 1.4 + glow * 0.6
     ;(this.scannerScreen.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.2 + sb * 2.5 + glow * 0.4
   }
 
   private buildModel(): THREE.Mesh {
-    const obsidian = mat('#14151a', 0.32, 0.65)
-    const graphite = mat('#2c2d33', 0.5, 0.45)
-    const suit = mat('#1a1b20', 0.85, 0.05)
-    const crimson = mat('#9a1d1f', 0.4, 0.35)
-    const skin = mat('#b98666', 0.75, 0)
-    const hair = mat('#120c0a', 0.8, 0)
-    const add = (parent: THREE.Object3D, geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => {
-      const mesh = new THREE.Mesh(geo, m)
-      mesh.position.set(x, y, z)
-      mesh.castShadow = true
-      parent.add(mesh)
-      return mesh
-    }
-    const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)
-
     this.model.add(this.hips)
     this.hips.position.y = 1.0
-    add(this.hips, box(0.36, 0.18, 0.24), suit, 0, 0, 0)
-    add(this.hips, box(0.38, 0.07, 0.26), graphite, 0, 0.05, 0) // belt
-    add(this.hips, box(0.08, 0.1, 0.05), this.chestMat, 0, 0.05, -0.135) // belt buckle light
-
     for (const side of [-1, 1]) {
+      const idx = side < 0 ? 0 : 1
       const thigh = new THREE.Group()
       thigh.position.set(side * 0.1, -0.05, 0)
       this.hips.add(thigh)
-      this.thigh[side < 0 ? 0 : 1] = thigh
-      add(thigh, new THREE.CylinderGeometry(0.075, 0.062, 0.45, 8), suit, 0, -0.225, 0)
-      add(thigh, box(0.15, 0.24, 0.17), graphite, 0, -0.17, -0.01)
+      this.thigh[idx] = thigh
       const knee = new THREE.Group()
       knee.position.y = -0.45
       thigh.add(knee)
-      this.knee[side < 0 ? 0 : 1] = knee
-      add(knee, box(0.12, 0.09, 0.13), obsidian, 0, 0, -0.07)
-      add(knee, new THREE.CylinderGeometry(0.058, 0.05, 0.43, 8), suit, 0, -0.225, 0)
-      add(knee, box(0.13, 0.3, 0.14), obsidian, 0, -0.2, -0.02)
-      add(knee, box(0.135, 0.04, 0.145), crimson, 0, -0.33, -0.02)
-      add(knee, box(0.12, 0.1, 0.27), graphite, 0, -0.4, -0.055) // boot
-      add(knee, box(0.125, 0.04, 0.275), obsidian, 0, -0.445, -0.055) // sole
+      this.knee[idx] = knee
     }
-
     this.hips.add(this.spine)
     this.spine.position.y = 0.1
-    add(this.spine, box(0.42, 0.44, 0.26), obsidian, 0, 0.24, 0) // chest
-    add(this.spine, box(0.3, 0.16, 0.27), suit, 0, 0.0, 0)
-    add(this.spine, box(0.12, 0.4, 0.02), crimson, -0.1, 0.25, -0.135).rotation.z = 0.35 // diagonal chest stripe
-    add(this.spine, box(0.07, 0.07, 0.02), this.chestMat, 0.09, 0.3, -0.135) // chest light
-    add(this.spine, box(0.34, 0.46, 0.16), graphite, 0, 0.26, 0.21) // pack
-    add(this.spine, box(0.28, 0.06, 0.17), crimson, 0, 0.42, 0.21)
-    add(this.spine, box(0.05, 0.3, 0.03), this.chestMat, 0.11, 0.25, 0.3)
-    add(this.spine, box(0.05, 0.3, 0.03), this.chestMat, -0.11, 0.25, 0.3)
-    const antenna = add(this.spine, new THREE.CylinderGeometry(0.008, 0.008, 0.4, 5), obsidian, -0.14, 0.62, 0.2)
-    antenna.rotation.z = 0.12
-    add(this.spine, new THREE.SphereGeometry(0.015, 6, 6), this.chestMat, -0.152, 0.82, 0.2)
-
     this.spine.add(this.head)
-    this.head.position.y = 0.58
-    add(this.head, new THREE.CylinderGeometry(0.07, 0.085, 0.1, 8), graphite, 0, -0.08, 0) // collar
-    const skull = add(this.head, new THREE.SphereGeometry(0.108, 18, 14), skin, 0, 0.04, 0)
-    skull.scale.set(0.92, 1.08, 1)
-    const cap = add(this.head, new THREE.SphereGeometry(0.117, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.56), hair, 0, 0.055, 0.012)
-    cap.scale.set(0.95, 1.05, 1.02)
-    add(this.head, box(0.19, 0.12, 0.1), hair, 0, 0.0, 0.07)
-    add(this.head, new THREE.SphereGeometry(0.014, 6, 6), mat('#0a0a0a'), -0.04, 0.05, -0.1)
-    add(this.head, new THREE.SphereGeometry(0.014, 6, 6), mat('#0a0a0a'), 0.04, 0.05, -0.1)
-    add(this.head, box(0.205, 0.022, 0.2), crimson, 0, 0.115, -0.015) // headband
-    add(this.head, box(0.075, 0.035, 0.05), this.visorMat, 0.045, 0.05, -0.115) // monocle visor
-    add(this.head, box(0.01, 0.02, 0.1), graphite, 0.108, 0.05, -0.05)
-
+    this.head.position.y = 0.565
     for (const side of [-1, 1]) {
       const idx = side < 0 ? 0 : 1
       const shoulder = new THREE.Group()
       shoulder.position.set(side * 0.29, 0.4, 0)
       this.spine.add(shoulder)
       this.arm[idx] = shoulder
-      add(shoulder, box(0.17, 0.1, 0.22), graphite, side * 0.03, 0.04, 0)
-      add(shoulder, box(0.17, 0.025, 0.225), crimson, side * 0.03, 0.095, 0)
-      add(shoulder, new THREE.CylinderGeometry(0.05, 0.044, 0.28, 8), suit, 0, -0.14, 0)
-      add(shoulder, box(0.1, 0.16, 0.11), obsidian, 0, -0.13, 0)
       const elbow = new THREE.Group()
       elbow.position.y = -0.28
       shoulder.add(elbow)
       this.elbow[idx] = elbow
-      add(elbow, new THREE.CylinderGeometry(0.044, 0.038, 0.26, 8), suit, 0, -0.13, 0)
-      add(elbow, box(0.085, 0.15, 0.095), graphite, 0, -0.12, 0)
-      add(elbow, box(0.09, 0.03, 0.1), crimson, 0, -0.2, 0)
-      add(elbow, new THREE.SphereGeometry(0.04, 8, 8), obsidian, 0, -0.27, 0)
-      if (side > 0) {
-        const device = add(elbow, box(0.075, 0.05, 0.16), obsidian, 0, -0.29, -0.06)
-        const screen = add(device, box(0.06, 0.012, 0.11), mat('#2cf0d0', 0.2, 0, { emissive: '#12d8b8', emissiveIntensity: 1.5 }), 0, 0.03, 0)
-        this.scannerScreen_ = screen
-      } else {
-        add(elbow, box(0.07, 0.035, 0.08), this.chestMat, 0, -0.12, -0.05)
-      }
     }
-    this.model.traverse(o => {
-      o.matrixAutoUpdate = true
+    const screen = buildExplorerModel({
+      hips: this.hips, spine: this.spine, head: this.head, thigh: this.thigh, knee: this.knee, arm: this.arm, elbow: this.elbow,
+      visorMat: this.visorMat, chestMat: this.chestMat,
     })
-    return this.scannerScreen_!
+    return screen
   }
-  private scannerScreen_?: THREE.Mesh
 }
