@@ -1,9 +1,10 @@
 import { DISCOVERIES } from './discoveries'
+import { defaultEco, parseEco, type EcoSave } from './ecostate'
 import type { RegionId } from './layout'
 
 export const STAGES = [
   'arrival', 'scannerIntro', 'toRidge', 'ridgeScan', 'toCrystal', 'crystal', 'toCore', 'coreScan',
-  'repair', 'stabilize', 'transform', 'basinObserve', 'toObservation', 'observationScan', 'free',
+  'repair', 'stabilize', 'transform', 'basinObserve', 'surgeGrowth', 'surgeThriving', 'toObservation', 'observationScan', 'free',
 ] as const
 export type Stage = (typeof STAGES)[number]
 
@@ -19,6 +20,10 @@ export interface Progress {
   oreFound: string[]
   stabilized: boolean
   vitality: number
+  /** V2 ecological state machine (0 Scarred .. 3 Thriving) and the last accepted Life-Core event id. */
+  eco: EcoSave
+  /** Quantised per-tile ecology snapshot (EcoGrid.serialize) written at save time; empty if none. */
+  ecoTiles: string
   tutorial: { moved: boolean; sprinted: boolean; jumped: boolean }
   /** Last safe position (x, y, z) and yaw. */
   pos: [number, number, number] | null
@@ -29,7 +34,7 @@ export interface Progress {
 
 export const defaultProgress = (): Progress => ({
   version: 2, stage: 'arrival', discoveries: {}, shardsFound: [], shards: 0, nodes: [false, false, false], oreFound: [],
-  stabilized: false, vitality: 0, tutorial: { moved: false, sprinted: false, jumped: false }, pos: null, yaw: 0, playTime: 0, completed: false,
+  stabilized: false, vitality: 0, eco: defaultEco(), ecoTiles: '', tutorial: { moved: false, sprinted: false, jumped: false }, pos: null, yaw: 0, playTime: 0, completed: false,
 })
 
 const num = (v: unknown, a: number, b: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : d)
@@ -59,9 +64,13 @@ export function parseProgress(raw: unknown): Progress | null {
   const pos = Array.isArray(posRaw) && posRaw.length === 3 && posRaw.every(n => typeof n === 'number' && Number.isFinite(n)) ? (posRaw as [number, number, number]) : null
   const t = (r.tutorial ?? {}) as Record<string, unknown>
   const stabilized = r.stabilized === true
+  // Saves from before V2 had no eco block: a stabilized world already recovered fully, so keep it at Thriving.
+  const eco = parseEco(r.eco, stabilized ? { stage: 3, lastEvent: 1 } : defaultEco())
+  if (!stabilized) eco.stage = 0
   const out: Progress = {
     ...d, stage, discoveries: disc, shardsFound: ids(r.shardsFound), nodes, oreFound: ids(r.oreFound), stabilized,
-    vitality: stabilized ? num(r.vitality, 0, 1, 0) : 0,
+    vitality: stabilized ? num(r.vitality, 0, 1, 0) : 0, eco,
+    ecoTiles: typeof r.ecoTiles === 'string' && r.ecoTiles.length < 16000 && /^[A-Za-z0-9+/=]*$/.test(r.ecoTiles) ? r.ecoTiles : '',
     tutorial: { moved: t.moved === true, sprinted: t.sprinted === true, jumped: t.jumped === true },
     pos, yaw: num(r.yaw, -10, 10, 0), playTime: num(r.playTime, 0, 1e8, 0), completed: r.completed === true,
   }
@@ -115,6 +124,10 @@ export function objectiveFor(p: Progress): Objective {
       return { title: 'Follow the new channel', detail: 'Watch the land respond, then follow the channel east to the Recovery Basin.', target: 'basin' }
     case 'basinObserve':
       return { title: 'Observe the recovery', detail: 'Scan two new things in the basin: the pool, the pioneer mat, a frond-tree or a mossgrazer.', target: null, progress: `${Math.min(2, recoveryScans(p))}/2` }
+    case 'surgeGrowth':
+      return { title: 'Return to the Life-Core', detail: 'The basin has only begun to recover. Hold E at the core to channel a second surge (Growth).', target: 'core', progress: 'state 2/4' }
+    case 'surgeThriving':
+      return { title: 'Channel the final surge', detail: 'Let the Growth state settle, then hold E at the core once more (Thriving). Watch the basin respond.', target: 'core', progress: 'state 3/4' }
     case 'toObservation':
       return { title: 'Climb to the Observation Point', detail: 'Follow the marker to the high ground east of the basin.', target: 'observation' }
     case 'observationScan':
@@ -153,7 +166,9 @@ function nextStage(p: Progress, ctx: StageContext): Stage | null {
     case 'repair': return nodeCount(p) >= 3 ? 'stabilize' : null
     case 'stabilize': return p.stabilized ? 'transform' : null
     case 'transform': return ctx.inRegion.basin ? 'basinObserve' : null
-    case 'basinObserve': return recoveryScans(p) >= 2 ? 'toObservation' : null
+    case 'basinObserve': return recoveryScans(p) >= 2 ? 'surgeGrowth' : null
+    case 'surgeGrowth': return p.eco.stage >= 2 ? 'surgeThriving' : null
+    case 'surgeThriving': return p.eco.stage >= 3 ? 'toObservation' : null
     case 'toObservation': return ctx.inRegion.observation ? 'observationScan' : null
     case 'observationScan': return has(p, 'panorama') ? 'free' : null
     default: return null

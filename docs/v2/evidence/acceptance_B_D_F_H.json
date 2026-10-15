@@ -1,0 +1,701 @@
+{
+ "B": [
+  {
+   "poi": "arrival",
+   "footY": 3.38,
+   "ground": 2.45,
+   "dyGround": 0.93,
+   "camAboveGround": 2.8,
+   "camDist": 5.61,
+   "region": "arrival"
+  },
+  {
+   "poi": "ridge",
+   "footY": 28.92,
+   "ground": 27.99,
+   "dyGround": 0.93,
+   "camAboveGround": 2.82,
+   "camDist": 5.61,
+   "region": "ridge"
+  },
+  {
+   "poi": "crystal",
+   "footY": 5.47,
+   "ground": 4.54,
+   "dyGround": 0.93,
+   "camAboveGround": 2.97,
+   "camDist": 5.61,
+   "region": "crystal"
+  },
+  {
+   "poi": "core",
+   "footY": 14.06,
+   "ground": 13.13,
+   "dyGround": 0.93,
+   "camAboveGround": 1.85,
+   "camDist": 1.22,
+   "region": "core"
+  },
+  {
+   "poi": "basin",
+   "footY": -7.2,
+   "ground": -8.13,
+   "dyGround": 0.92,
+   "camAboveGround": 2.57,
+   "camDist": 5.61,
+   "region": "basin"
+  },
+  {
+   "poi": "observation",
+   "footY": 26.76,
+   "ground": 25.83,
+   "dyGround": 0.93,
+   "camAboveGround": 2.99,
+   "camDist": 5.61,
+   "region": "observation"
+  }
+ ],
+ "D": {
+  "sigs": [
+   {
+    "h": -1999789448,
+    "spire": [
+     -52.27,
+     8.83,
+     -66.02
+    ],
+    "pylon": [
+     -30,
+     13.13,
+     -135
+    ],
+    "pod": [
+     9,
+     2.46,
+     143
+    ],
+    "outcrops": [
+     [
+      -16.7,
+      -137.9
+     ],
+     [
+      -17.7,
+      -140.7
+     ],
+     [
+      -41.9,
+      -129.7
+     ],
+     [
+      -43.1,
+      -145.4
+     ],
+     [
+      -34,
+      -118.6
+     ]
+    ],
+    "rubble": [
+     [
+      -44.5,
+      -129
+     ],
+     [
+      85.6,
+      -108.7
+     ],
+     [
+      -31.8,
+      -118.8
+     ],
+     [
+      73.7,
+      -105.2
+     ],
+     [
+      72.2,
+      -75.7
+     ]
+    ]
+   },
+   {
+    "h": -1999789448,
+    "spire": [
+     -52.27,
+     8.83,
+     -66.02
+    ],
+    "pylon": [
+     -30,
+     13.13,
+     -135
+    ],
+    "pod": [
+     9,
+     2.46,
+     143
+    ],
+    "outcrops": [
+     [
+      -16.7,
+      -137.9
+     ],
+     [
+      -17.7,
+      -140.7
+     ],
+     [
+      -41.9,
+      -129.7
+     ],
+     [
+      -43.1,
+      -145.4
+     ],
+     [
+      -34,
+      -118.6
+     ]
+    ],
+    "rubble": [
+     [
+      -44.5,
+      -129
+     ],
+     [
+      85.6,
+      -108.7
+     ],
+     [
+      -31.8,
+      -118.8
+     ],
+     [
+      73.7,
+      -105.2
+     ],
+     [
+      72.2,
+      -75.7
+     ]
+    ]
+   },
+   {
+    "h": -1999789448,
+    "spire": [
+     -52.27,
+     8.83,
+     -66.02
+    ],
+    "pylon": [
+     -30,
+     13.13,
+     -135
+    ],
+    "pod": [
+     9,
+     2.46,
+     143
+    ],
+    "outcrops": [
+     [
+      -16.7,
+      -137.9
+     ],
+     [
+      -17.7,
+      -140.7
+     ],
+     [
+      -41.9,
+      -129.7
+     ],
+     [
+      -43.1,
+      -145.4
+     ],
+     [
+      -34,
+      -118.6
+     ]
+    ],
+    "rubble": [
+     [
+      -44.5,
+      -129
+     ],
+     [
+      85.6,
+      -108.7
+     ],
+     [
+      -31.8,
+      -118.8
+     ],
+     [
+      73.7,
+      -105.2
+     ],
+     [
+      72.2,
+      -75.7
+     ]
+    ]
+   },
+   {
+    "h": -1999789448,
+    "spire": [
+     -52.27,
+     8.83,
+     -66.02
+    ],
+    "pylon": [
+     -30,
+     13.13,
+     -135
+    ],
+    "pod": [
+     9,
+     2.46,
+     143
+    ],
+    "outcrops": [
+     [
+      -16.7,
+      -137.9
+     ],
+     [
+      -17.7,
+      -140.7
+     ],
+     [
+      -41.9,
+      -129.7
+     ],
+     [
+      -43.1,
+      -145.4
+     ],
+     [
+      -34,
+      -118.6
+     ]
+    ],
+    "rubble": [
+     [
+      -44.5,
+      -129
+     ],
+     [
+      85.6,
+      -108.7
+     ],
+     [
+      -31.8,
+      -118.8
+     ],
+     [
+      73.7,
+      -105.2
+     ],
+     [
+      72.2,
+      -75.7
+     ]
+    ]
+   }
+  ],
+  "terrainIdentical": true,
+  "landmarksIdentical": true
+ },
+ "F": [
+  {
+   "stage": 0,
+   "vit": 0,
+   "ecoStage": 0,
+   "meanLife": 0,
+   "share": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "v2Visible": {
+    "pioneer": 0,
+    "reed": 0,
+    "shrub": 0,
+    "canopy": 0,
+    "rubble": 230,
+    "outcrop": 44
+   },
+   "v2VisibleTotal": 274,
+   "hash": "d321e4d6",
+   "tel": {
+    "fps": 6.8,
+    "frameMsAvg": 147.27,
+    "frameMsP95": 250,
+    "frameMsMax": 250,
+    "drawCalls": 1,
+    "triangles": 1,
+    "geometries": 247,
+    "textures": 55,
+    "v2Instances": 1017,
+    "v2Chunks": 50,
+    "v2ChunksHi": 18,
+    "v2ChunksLo": 25,
+    "quality": "medium"
+   }
+  },
+  {
+   "stage": 1,
+   "vit": 0.3,
+   "ecoStage": 1,
+   "meanLife": 0.0043,
+   "share": [
+    0.978,
+    0.018,
+    0.004,
+    0
+   ],
+   "v2Visible": {
+    "pioneer": 33,
+    "reed": 0,
+    "shrub": 0,
+    "canopy": 0,
+    "rubble": 230,
+    "outcrop": 44
+   },
+   "v2VisibleTotal": 307,
+   "hash": "3cb71539",
+   "tel": {
+    "fps": 5.6,
+    "frameMsAvg": 178.37,
+    "frameMsP95": 250,
+    "frameMsMax": 250,
+    "drawCalls": 1,
+    "triangles": 1,
+    "geometries": 252,
+    "textures": 55,
+    "v2Instances": 1017,
+    "v2Chunks": 50,
+    "v2ChunksHi": 18,
+    "v2ChunksLo": 25,
+    "quality": "medium"
+   }
+  },
+  {
+   "stage": 2,
+   "vit": 0.64,
+   "ecoStage": 2,
+   "meanLife": 0.0528,
+   "share": [
+    0.877,
+    0.05,
+    0.04,
+    0.033
+   ],
+   "v2Visible": {
+    "pioneer": 193,
+    "reed": 336,
+    "shrub": 32,
+    "canopy": 0,
+    "rubble": 230,
+    "outcrop": 44
+   },
+   "v2VisibleTotal": 835,
+   "hash": "946c2b6e",
+   "tel": {
+    "fps": 5.4,
+    "frameMsAvg": 185.72,
+    "frameMsP95": 250,
+    "frameMsMax": 250,
+    "drawCalls": 1,
+    "triangles": 1,
+    "geometries": 253,
+    "textures": 58,
+    "v2Instances": 1017,
+    "v2Chunks": 50,
+    "v2ChunksHi": 18,
+    "v2ChunksLo": 25,
+    "quality": "medium"
+   }
+  },
+  {
+   "stage": 3,
+   "vit": 1,
+   "ecoStage": 3,
+   "meanLife": 0.1338,
+   "share": [
+    0.703,
+    0.13,
+    0.075,
+    0.092
+   ],
+   "v2Visible": {
+    "pioneer": 294,
+    "reed": 336,
+    "shrub": 105,
+    "canopy": 8,
+    "rubble": 230,
+    "outcrop": 44
+   },
+   "v2VisibleTotal": 1017,
+   "hash": "40d0da6d",
+   "tel": {
+    "fps": 5.3,
+    "frameMsAvg": 189.9,
+    "frameMsP95": 250,
+    "frameMsMax": 250,
+    "drawCalls": 1,
+    "triangles": 1,
+    "geometries": 253,
+    "textures": 58,
+    "v2Instances": 1017,
+    "v2Chunks": 50,
+    "v2ChunksHi": 18,
+    "v2ChunksLo": 25,
+    "quality": "medium"
+   }
+  }
+ ],
+ "H": {
+  "props": {
+   "crystals": {
+    "id": "crystals",
+    "file": "VP_PROTOTYPE_CRYSTALS.glb",
+    "meshes": 5,
+    "tris": 128,
+    "verts": 384,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     1.8,
+     4.19,
+     1.4
+    ],
+    "minY": -0.14,
+    "issues": [
+     "no materials and no normals: vertex colours only, flat blockout"
+    ],
+    "fixes": [],
+    "upgradedTris": 896
+   },
+   "pioneer": {
+    "id": "pioneer",
+    "file": "VP_PROTOTYPE_PIONEER.glb",
+    "meshes": 14,
+    "tris": 140,
+    "verts": 420,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     1.56,
+     0.26,
+     1.49
+    ],
+    "minY": 0,
+    "issues": [
+     "no materials and no normals: vertex colours only, flat blockout",
+     "geometry sits 0.13 m above the origin"
+    ],
+    "fixes": [
+     "translated down 0.13 m so the base touches the ground"
+    ],
+    "upgradedTris": 560
+   },
+   "reed": {
+    "id": "reed",
+    "file": "VP_PROTOTYPE_REED.glb",
+    "meshes": 15,
+    "tris": 210,
+    "verts": 630,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     1.19,
+     1.87,
+     1.07
+    ],
+    "minY": 0,
+    "issues": [
+     "no materials and no normals: vertex colours only, flat blockout",
+     "geometry sits 0.36 m above the origin"
+    ],
+    "fixes": [
+     "translated down 0.36 m so the base touches the ground"
+    ],
+    "upgradedTris": 840
+   },
+   "rock": {
+    "id": "rock",
+    "file": "VP_PROTOTYPE_ROCK.glb",
+    "meshes": 2,
+    "tris": 160,
+    "verts": 480,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     1.6,
+     1.1,
+     1.1
+    ],
+    "minY": -0.13,
+    "issues": [
+     "no materials and no normals: vertex colours only, flat blockout"
+    ],
+    "fixes": [],
+    "upgradedTris": 2560
+   },
+   "shrub": {
+    "id": "shrub",
+    "file": "VP_PROTOTYPE_SHRUB.glb",
+    "meshes": 22,
+    "tris": 1034,
+    "verts": 3102,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     1.39,
+     1.36,
+     1.4
+    ],
+    "minY": 0,
+    "issues": [
+     "no materials and no normals: vertex colours only, flat blockout",
+     "geometry sits 0.28 m above the origin"
+    ],
+    "fixes": [
+     "translated down 0.28 m so the base touches the ground"
+    ],
+    "upgradedTris": 4136
+   },
+   "tree": {
+    "id": "tree",
+    "file": "VP_PROTOTYPE_TREE.glb",
+    "meshes": 17,
+    "tris": 772,
+    "verts": 2316,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     2.83,
+     4.5,
+     2.5
+    ],
+    "minY": 0,
+    "issues": [
+     "no materials and no normals: vertex colours only, flat blockout",
+     "trunk base floats 1.5 m above the origin"
+    ],
+    "fixes": [
+     "trunk base extended down to y=0 with a 1.7x root flare"
+    ],
+    "upgradedTris": 12352
+   }
+  },
+  "stages": [
+   {
+    "id": "stage1",
+    "file": "VP_STAGE_01.glb",
+    "meshes": 10,
+    "tris": 460,
+    "verts": 1380,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     14,
+     4.38,
+     14
+    ],
+    "minY": -0.32,
+    "issues": [
+     "14 m x 14 m diorama tile, no materials, vertex colours only"
+    ],
+    "fixes": [],
+    "upgradedTris": 0
+   },
+   {
+    "id": "stage2",
+    "file": "VP_STAGE_02.glb",
+    "meshes": 22,
+    "tris": 440,
+    "verts": 1320,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     14,
+     4.38,
+     14
+    ],
+    "minY": -0.32,
+    "issues": [
+     "14 m x 14 m diorama tile, no materials, vertex colours only"
+    ],
+    "fixes": [],
+    "upgradedTris": 0
+   },
+   {
+    "id": "stage3",
+    "file": "VP_STAGE_03.glb",
+    "meshes": 54,
+    "tris": 1556,
+    "verts": 4668,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     14,
+     2.56,
+     14
+    ],
+    "minY": -0.32,
+    "issues": [
+     "14 m x 14 m diorama tile, no materials, vertex colours only"
+    ],
+    "fixes": [],
+    "upgradedTris": 0
+   },
+   {
+    "id": "stage4",
+    "file": "VP_STAGE_04.glb",
+    "meshes": 71,
+    "tris": 2328,
+    "verts": 6984,
+    "hasColor": true,
+    "hasNormals": false,
+    "hasUV": false,
+    "hasMaterial": false,
+    "size": [
+     14,
+     4.82,
+     14
+    ],
+    "minY": -0.32,
+    "issues": [
+     "14 m x 14 m diorama tile, no materials, vertex colours only"
+    ],
+    "fixes": [],
+    "upgradedTris": 0
+   }
+  ]
+ },
+ "errors": []
+}

@@ -232,3 +232,8 @@ ol.steps { padding-left: 18px; margin: 0; } ol.steps li { margin-bottom: 7px; }
 @media (max-height: 640px) { .modal-body { padding: 18px; } .modal-body > .row { bottom: -18px; } }
 
 .land-name { color: #b9a9a0; font-size: 11px; letter-spacing: 0.04em; margin: -3px 0 7px; opacity: 0.9; }
+
+/* V2: ecological state pips under the Recovery bar */
+.eco-pips { display: flex; gap: 4px; margin-top: 6px; }
+.eco-pips i { flex: 1; height: 5px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); transition: background 0.8s, box-shadow 0.8s; }
+.eco-pips i.on { background: linear-gradient(90deg, #d8402e, #35f2d2); box-shadow: 0 0 8px rgba(53, 242, 210, 0.45); }

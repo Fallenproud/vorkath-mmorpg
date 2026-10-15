@@ -1,0 +1,12 @@
+B {"poi":"arrival","footY":3.38,"ground":2.45,"dyGround":0.93,"camAboveGround":2.8,"camDist":5.61,"region":"arrival"}
+B {"poi":"ridge","footY":28.92,"ground":27.99,"dyGround":0.93,"camAboveGround":2.82,"camDist":5.61,"region":"ridge"}
+B {"poi":"crystal","footY":5.47,"ground":4.54,"dyGround":0.93,"camAboveGround":2.97,"camDist":5.61,"region":"crystal"}
+B {"poi":"core","footY":14.06,"ground":13.13,"dyGround":0.93,"camAboveGround":1.85,"camDist":1.22,"region":"core"}
+B {"poi":"basin","footY":-7.2,"ground":-8.13,"dyGround":0.92,"camAboveGround":2.57,"camDist":5.61,"region":"basin"}
+B {"poi":"observation","footY":26.76,"ground":25.83,"dyGround":0.93,"camAboveGround":2.99,"camDist":5.61,"region":"observation"}
+F {"stage":0,"vit":0,"ecoStage":0,"meanLife":0,"share":[1,0,0,0],"v2Visible":{"pioneer":0,"reed":0,"shrub":0,"canopy":0,"rubble":230,"outcrop":44},"v2VisibleTotal":274,"hash":"d321e4d6"}
+F {"stage":1,"vit":0.3,"ecoStage":1,"meanLife":0.0043,"share":[0.978,0.018,0.004,0],"v2Visible":{"pioneer":33,"reed":0,"shrub":0,"canopy":0,"rubble":230,"outcrop":44},"v2VisibleTotal":307,"hash":"3cb71539"}
+F {"stage":2,"vit":0.64,"ecoStage":2,"meanLife":0.0528,"share":[0.877,0.05,0.04,0.033],"v2Visible":{"pioneer":193,"reed":336,"shrub":32,"canopy":0,"rubble":230,"outcrop":44},"v2VisibleTotal":835,"hash":"946c2b6e"}
+F {"stage":3,"vit":1,"ecoStage":3,"meanLife":0.1338,"share":[0.703,0.13,0.075,0.092],"v2Visible":{"pioneer":294,"reed":336,"shrub":105,"canopy":8,"rubble":230,"outcrop":44},"v2VisibleTotal":1017,"hash":"40d0da6d"}
+D terrainIdentical true landmarksIdentical true
+errors []

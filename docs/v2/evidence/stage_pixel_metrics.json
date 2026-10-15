@@ -1,0 +1,30 @@
+{
+ "s0->s1_meanAbsDiff": 12.05,
+ "s1->s2_meanAbsDiff": 16.39,
+ "s2->s3_meanAbsDiff": 14.47,
+ "s0->s3_meanAbsDiff": 29.5,
+ "s0_greenDominantPixels_pct": 0.0,
+ "s0_meanRGB": [
+  58.8,
+  23.8,
+  16.9
+ ],
+ "s1_greenDominantPixels_pct": 0.4,
+ "s1_meanRGB": [
+  65.2,
+  36.4,
+  27.1
+ ],
+ "s2_greenDominantPixels_pct": 9.8,
+ "s2_meanRGB": [
+  65.4,
+  45.7,
+  35.7
+ ],
+ "s3_greenDominantPixels_pct": 42.2,
+ "s3_meanRGB": [
+  55.9,
+  52.6,
+  32.9
+ ]
+}

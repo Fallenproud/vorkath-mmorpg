@@ -8,6 +8,10 @@ import type { HeightField } from './heightfield'
 import { POI } from './layout'
 import type { Vent } from './props'
 import { U } from './uniforms'
+import type { Physics } from '../engine/physics'
+import type { EcoGrid } from './ecostate'
+import { V2Flora, V2_SPECIES, type V2SpeciesId } from './v2flora'
+import type { V2Imports } from './v2assets'
 
 /**
  * Biome-dependent vegetation, NEW procedural assets (no plant meshes existed in the reference pack).
@@ -18,7 +22,8 @@ import { U } from './uniforms'
  * Each species is planted only in the biomes listed in SPECIES and starts growing when the succession
  * front (see ecology.ts) has passed that spot by `offset` vitality units.
  */
-export type SpeciesId = 'lichen' | 'sedge' | 'fern' | 'mycoid' | 'lobloom' | 'kelp' | 'gasmat'
+type V1Id = 'lichen' | 'sedge' | 'fern' | 'mycoid' | 'lobloom' | 'kelp' | 'gasmat'
+export type SpeciesId = V1Id | V2SpeciesId
 
 interface SpeciesDef {
   id: SpeciesId
@@ -40,6 +45,8 @@ export const SPECIES: SpeciesDef[] = [
   { id: 'lobloom', name: 'Lobloom Tree', biomes: ['basinSoil', 'wetCorridor', 'conduitHalo'], count: 22, offset: 0.52, maxSlope: 14, nearWater: 60 },
   { id: 'kelp', name: 'Vent Kelp', biomes: ['wetCorridor'], count: 80, offset: 0, maxSlope: 40 },
   { id: 'gasmat', name: 'Gas Plume Mat', biomes: [], count: 0, offset: 0, maxSlope: 99 },
+  // V2 props are placed by V2Flora (ecology-weighted tiles); listed here for names only.
+  ...V2_SPECIES.map(d => ({ id: d.id as SpeciesId, name: d.name, biomes: [] as Biome[], count: 0, offset: d.offset, maxSlope: 99 })),
 ]
 
 export interface Specimen {
@@ -52,7 +59,7 @@ export interface Specimen {
 type G = THREE.BufferGeometry
 
 /** Colour + glow painter: writes `color` and `aGlow` and strips uv so geometries can be merged. */
-function paint(geo: G, fn: (x: number, y: number, z: number, nx: number, ny: number, nz: number) => [number, number, number, number]): G {
+export function paint(geo: G, fn: (x: number, y: number, z: number, nx: number, ny: number, nz: number) => [number, number, number, number]): G {
   const g = geo.index ? geo.toNonIndexed() : geo
   g.deleteAttribute('uv')
   const p = g.attributes.position
@@ -321,7 +328,7 @@ function gasMatGeo(rnd: () => number): G {
   })
 }
 
-function bioMaterial(grow: boolean, sway: number, glowK: number, wind = true): THREE.MeshStandardMaterial {
+export function bioMaterial(grow: boolean, sway: number, glowK: number, wind = true): THREE.MeshStandardMaterial {
   const base = new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.82, side: THREE.DoubleSide })
   const mat = grow ? growable(base, wind ? sway : 0) : base
   const prev = grow ? mat.onBeforeCompile : null
@@ -341,20 +348,21 @@ function bioMaterial(grow: boolean, sway: number, glowK: number, wind = true): T
 
 export class Biota {
   readonly group = new THREE.Group()
-  readonly specimens: Record<SpeciesId, Specimen[]> = { lichen: [], sedge: [], fern: [], mycoid: [], lobloom: [], kelp: [], gasmat: [] }
-  readonly counts: Record<SpeciesId, number> = { lichen: 0, sedge: 0, fern: 0, mycoid: 0, lobloom: 0, kelp: 0, gasmat: 0 }
+  readonly specimens: Record<SpeciesId, Specimen[]> = { lichen: [], sedge: [], fern: [], mycoid: [], lobloom: [], kelp: [], gasmat: [], pioneer: [], reed: [], shrub: [], canopy: [], rubble: [], outcrop: [] }
+  readonly counts: Record<SpeciesId, number> = { lichen: 0, sedge: 0, fern: 0, mycoid: 0, lobloom: 0, kelp: 0, gasmat: 0, pioneer: 0, reed: 0, shrub: 0, canopy: 0, rubble: 0, outcrop: 0 }
 
-  constructor(hf: HeightField, vents: Vent[], density: number) {
+  v2: V2Flora | null = null
+  constructor(hf: HeightField, vents: Vent[], density: number, eco?: EcoGrid, v2?: V2Imports | null, level = 1, physics?: Physics) {
     const rnd = mulberry32(4242)
-    const geos: Record<SpeciesId, G> = {
+    const geos: Record<V1Id, G> = {
       lichen: lichenGeo(rnd), sedge: sedgeGeo(rnd), fern: fernGeo(rnd), mycoid: mycoidGeo(rnd), lobloom: lobloomGeo(rnd), kelp: kelpGeo(rnd), gasmat: gasMatGeo(rnd),
     }
-    const heights: Record<SpeciesId, number> = { lichen: 0.1, sedge: 1.2, fern: 1.3, mycoid: 1.6, lobloom: 5.2, kelp: 2.6, gasmat: 0.1 }
-    const mats: Record<SpeciesId, THREE.MeshStandardMaterial> = {
+    const heights: Record<V1Id, number> = { lichen: 0.1, sedge: 1.2, fern: 1.3, mycoid: 1.6, lobloom: 5.2, kelp: 2.6, gasmat: 0.1 }
+    const mats: Record<V1Id, THREE.MeshStandardMaterial> = {
       lichen: bioMaterial(true, 0, 1.3), sedge: bioMaterial(true, 0.3, 1.0), fern: bioMaterial(true, 0.3, 1.5), mycoid: bioMaterial(true, 0.06, 1.1),
       lobloom: bioMaterial(true, 0.07, 1.4), kelp: bioMaterial(true, 0.9, 1.0), gasmat: bioMaterial(false, 0, 1.4),
     }
-    const cast: Record<SpeciesId, boolean> = { lichen: false, sedge: false, fern: false, mycoid: true, lobloom: true, kelp: false, gasmat: false }
+    const cast: Record<V1Id, boolean> = { lichen: false, sedge: false, fern: false, mycoid: true, lobloom: true, kelp: false, gasmat: false }
 
     const nearWaterDist = (x: number, z: number) => {
       const cd = hf.channelDistance(x, z).d
@@ -362,8 +370,9 @@ export class Biota {
       return Math.min(cd, Math.abs(lake - 22))
     }
 
-    for (const sp of SPECIES) {
-      if (sp.id === 'gasmat') continue
+    for (const sp0 of SPECIES) {
+      if (sp0.count === 0) continue
+      const sp = sp0 as typeof sp0 & { id: V1Id }
       const items: Placement[] = []
       const thr: number[] = []
       const want = Math.max(2, Math.round(sp.count * density))
@@ -440,6 +449,17 @@ export class Biota {
         this.counts.gasmat = items.length
       }
     }
+    if (eco && v2) {
+      this.v2 = new V2Flora(hf, eco, v2, level, density, physics)
+      this.group.add(this.v2.group)
+      for (const id of Object.keys(this.v2.specimens) as V2SpeciesId[]) {
+        this.counts[id] = this.v2.counts[id]
+        this.specimens[id] = this.v2.specimens[id] as unknown as Specimen[]
+      }
+    }
     this.group.name = 'biota'
+  }
+  update(dt: number, cam: THREE.Vector3, vit: number): void {
+    this.v2?.update(dt, cam, vit)
   }
 }

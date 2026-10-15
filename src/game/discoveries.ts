@@ -139,6 +139,41 @@ export const DISCOVERIES: Discovery[] = [
     hint: 'Ribbons under the water of the pool.',
   },
   {
+    id: 'pioneer', title: 'Pioneer Cushion', category: 'Biology', region: 'core',
+    text: 'Low, tightly packed cushions that settle first on cooled rock where a little soil and moisture have gathered. Rust at the rim, lichen-green in the middle. They trap dust, hold water and prepare the ground for reeds and shrubs; on bare steep rock they simply do not take. (Proposed species name and ecology; not approved canon. Based on the pioneer-stage references in the V1 pack.)',
+    hint: 'Small pads on cooled ground, in the first state of recovery.',
+  },
+  {
+    id: 'reed', title: 'Marsh Reed', category: 'Hydrology', region: 'basin',
+    text: 'Curved olive blades in tight clumps, found only where the ground is level and the water table is high: the pool rim and the channel margins. Their spread is a direct read-out of water availability and they appear in the Growth state. (Proposed species name and ecology; not approved canon.)',
+    hint: 'Blade clumps along the water, once the land has grown.',
+  },
+  {
+    id: 'shrub', title: 'Ember Shrub', category: 'Biology', region: 'basin',
+    text: 'A low branching shrub. On dry, mineral ground its leaves keep the red and violet of the scar; on damp soil they turn olive. It needs real soil and gentle slopes, so it fills the foothills and the basin but never the steep ridge. (Proposed species name and ecology; not approved canon.)',
+    hint: 'Branching shrubs whose colour follows the soil moisture.',
+  },
+  {
+    id: 'canopy', title: 'Shelter Tree', category: 'Biology', region: 'basin',
+    text: 'A broad-crowned tree with a dark, flared trunk. Only a handful stand in the whole slice, each on deep damp soil beside water, and only in the Thriving state. They are the clearest sign that the basin soil has matured. (Proposed species name and ecology; not approved canon. Distinct from the earlier Lobloom prototype.)',
+    hint: 'A broad tree beside the water at full recovery.',
+  },
+  {
+    id: 'rubble', title: 'Basalt Rubble', category: 'Geology', region: 'ridge',
+    text: 'Dark, fractured boulders shed from the ridge and the crystal field. Bare in the Scarred state; moss climbs the upper faces as the recovery front passes, which is a quick way to read how far life has spread. Large blocks are solid. (Prototype geology; not approved canon.)',
+    hint: 'Fractured boulders that gather moss as the land recovers.',
+  },
+  {
+    id: 'outcrop', title: 'Crystal Outcrop', category: 'Geology', region: 'crystal',
+    text: 'Dark crystal clusters rising from a basalt base. Crimson in the crystal field, turquoise where they stand in the Life-Core halo. They do not grow or fade with the recovery, so they are fixed landmarks you can navigate by in every state. (Prototype geology; not approved canon.)',
+    hint: 'Crystal clusters on dark rock, red or turquoise.',
+  },
+  {
+    id: 'stagemodel', title: 'Succession Model', category: 'Survey', region: 'observation',
+    text: 'A table model at the Observation Point shows the four states of the region side by side: Scarred, Pioneer, Growth and Thriving. The marker on it follows the real state of the land, taken from the same tile data the scanner reads. (Prototype interpretation; the four tile meshes are the supplied V2 stage diorama prototypes.)',
+    hint: 'A four-stage model at the Observation Point.',
+  },
+  {
     id: 'panorama', title: 'Observation Panorama', category: 'Survey', region: 'observation',
     text: 'From here the whole route is visible: the black scar of the ridge, the red-lit crystal field, the Life-Core standing calmly in its crater, and the green basin with water running into it. The pulse is steady now. This is the end of the survey slice, and the start of whatever the planet does next.',
     hint: 'The view from the high ground east of the basin.',

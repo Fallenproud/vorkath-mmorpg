@@ -1,0 +1,92 @@
+[
+  {
+    "path": "3d/props/VP_PROTOTYPE_CRYSTALS.glb",
+    "bytes": 5352,
+    "sha256": "95799457e6b1f8715186b4db2ed5f4b6205b90d2c45267c875d561c7068d04f3",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/props/VP_PROTOTYPE_PIONEER.glb",
+    "bytes": 8580,
+    "sha256": "e131a530a2a1ece1d8bfb9e9e2f8e8b2cc7c767ee70cd69d45b609103d9f27bf",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/props/VP_PROTOTYPE_REED.glb",
+    "bytes": 9596,
+    "sha256": "cddd597edbcfda33a489190689582ddd9878dcc9ca22ec7dd41bcddaee21cbed",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/props/VP_PROTOTYPE_ROCK.glb",
+    "bytes": 3924,
+    "sha256": "a3fbeb20ff0c620ccb1468f0a2ced3b0e07aae981bc7b4b764e52adadbdceb74",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/props/VP_PROTOTYPE_SHRUB.glb",
+    "bytes": 19084,
+    "sha256": "9f6580e9ab5d9652337789a0142f97fdc9d56948039957469cf8ceaf285d8967",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/props/VP_PROTOTYPE_TREE.glb",
+    "bytes": 15616,
+    "sha256": "3e227d08def7943abf902ba2eda6a9920bc23207d954c8c7d2dcaab094ad010c",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/stages/VP_STAGE_01.glb",
+    "bytes": 10776,
+    "sha256": "e46b5958b6ae2a4a54bb07d3d64564621f1eac1feb03dd2f8a42d7571173ac30",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/stages/VP_STAGE_02.glb",
+    "bytes": 17268,
+    "sha256": "866da0640b096835111edebcc968396d7b48500fec6e77ef6b67bfef0cb1345a",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/stages/VP_STAGE_03.glb",
+    "bytes": 40040,
+    "sha256": "c4cdf19165c66272213fe0bf17fdbd4fd2d740d84e211b69969c2124fcf5a29e",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "3d/stages/VP_STAGE_04.glb",
+    "bytes": 54116,
+    "sha256": "e34dda910649df9e044b635b5fcbb4b3e25d80a92d6e329a6efe8da16f467528",
+    "kind": "procedural_glb_prototype"
+  },
+  {
+    "path": "README.md",
+    "bytes": 819,
+    "sha256": "70f9fdbecbfc0b27fed7584cb3879610fade2640c05419c6801236ab678e190b",
+    "kind": "reference_or_document"
+  },
+  {
+    "path": "reference/V2_GENERATED_CONCEPT_EXPLORATION_NOT_CANON.png",
+    "bytes": 3071461,
+    "sha256": "f6d6e305a37e401c1c8c0f094c159c586526893f6aaeab695d0f42c5327c5f20",
+    "kind": "reference_or_document"
+  },
+  {
+    "path": "reference/VORKATH_MANUS_CANONICAL_ASSET_PACK_V1.zip",
+    "bytes": 169316848,
+    "sha256": "275ee2579ae334237d755d93e83648c7ecd2ceb8d5e5636f565166729f68f9c4",
+    "kind": "reference_or_document"
+  },
+  {
+    "path": "specs/ENGINE_IMPORT_AND_MODEL_LIMITS.md",
+    "bytes": 635,
+    "sha256": "58c8a8facdbe7c79ea42f008ebce77f3ae2d81b073a1a701d290213adb854fdc",
+    "kind": "reference_or_document"
+  },
+  {
+    "path": "specs/MANUS_V2_EXECUTION_HANDOFF.md",
+    "bytes": 4925,
+    "sha256": "d636602a065aa43662418f41cc6270a223e8c4c3e874a5de2fee5a082078f777",
+    "kind": "reference_or_document"
+  }
+]

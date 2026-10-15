@@ -4,6 +4,9 @@ import frondUrl from '../../assets/models/frondtree.glb?url'
 import pylonUrl from '../../assets/models/lifecore_pylon.glb?url'
 import grazerUrl from '../../assets/models/mossgrazer.glb?url'
 import podUrl from '../../assets/models/landing_pod.glb?url'
+import { EcoGrid, ECO_STAGES, ecoSettling, requestEcoAdvance, type EcoResult } from './ecostate'
+import { loadV2, type V2Imports } from './v2assets'
+import { SurveyModel } from './surveymodel'
 import type { Assets } from '../engine/assets'
 import type { AudioEngine } from '../engine/audio'
 import type { Input } from '../engine/input'
@@ -14,7 +17,7 @@ import type { SaveStore, Settings } from '../engine/save'
 import { clamp, smooth } from '../engine/noise'
 import { Atmosphere } from './atmosphere'
 import { CameraRig, type Shot } from './camera'
-import { Cinematics, emptyOut, OPENING_HANDOVER, OPENING_SECONDS, TEASER_SECONDS, type CineOut, type ViewState } from './cinematics'
+import { Cinematics, emptyOut, OPENING_HANDOVER, OPENING_SECONDS, TEASER_SECONDS, TRANSFORM_SECONDS, type CineOut, type ViewState } from './cinematics'
 import { CONFIG } from './config'
 import { DISCOVERY_BY_ID, DISCOVERIES, type Discovery } from './discoveries'
 import { Explorer } from './explorer'
@@ -87,6 +90,9 @@ export interface Hud {
   region: string | null
   /** Biome and ecological stage under the explorer. */
   land: string | null
+  /** Global ecological state (Scarred / Pioneer / Growth / Thriving) and its index 0..3. */
+  eco: string
+  ecoIndex: number
   hidden: boolean
 }
 
@@ -99,6 +105,7 @@ interface Ripple {
   flat: boolean
 }
 
+const QUALITY_LEVEL: Record<string, number> = { low: 0, medium: 1, high: 2 }
 const stageIndex = (s: Stage) => (STAGES as readonly Stage[]).indexOf(s)
 
 const QUALITY_DENSITY = {
@@ -138,6 +145,14 @@ export class Game {
   private cine!: Cinematics
   private scannables: Scannable[] = []
   private models: ModelSet = {}
+  /** Ecology tile grid, V2 imports and the evidence log of Life-Core events (accepted and rejected). */
+  eco!: EcoGrid
+  v2: V2Imports | null = null
+  successionModel: SurveyModel | null = null
+  readonly ecoLog: { t: number; id: number; accepted: boolean; reason: string; from: number; to: number }[] = []
+  ecoRestored = false
+  private ecoClock = 0
+  readonly perf = { frames: 0, avg: 0, p95: 0, max: 0, samples: [] as number[] }
   private readonly ripples: Ripple[] = []
   private readonly spawn = new THREE.Vector3()
   private readonly lastSafe = new THREE.Vector3()
@@ -149,6 +164,7 @@ export class Game {
   private cineT = 0
   private cineOut: CineOut = emptyOut()
   private teaserPaused = false
+  teaserKind: 'teaser' | 'transform' = 'teaser'
   private readonly teaserFired = new Set<string>()
   private readonly shotSrc: Shot = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 60 }
 
@@ -182,7 +198,7 @@ export class Game {
     this.hud = {
       mode: 'boot', objective: objectiveFor(this.progress), prompt: null, integrity: 100, shards: 0, ore: 0, nodes: 0, vitality: 0, discoveries: 0,
       scanner: { active: false, state: 'idle', label: '', dist: 0, progress: 0, known: false }, tags: [], waypoint: null, caption: null,
-      haze: 0, black: 1, flash: 0, hurt: 0, yaw: 0, bearing: null, skipVisible: false, survey: false, walk: false, teaser: null, speed: 0, region: null, land: null, hidden: true,
+      haze: 0, black: 1, flash: 0, hurt: 0, yaw: 0, bearing: null, skipVisible: false, survey: false, walk: false, teaser: null, speed: 0, region: null, land: null, eco: 'Scarred', ecoIndex: 0, hidden: true,
     }
   }
 
@@ -200,6 +216,12 @@ export class Game {
       }
     }
     const [crystal, pylon, frond, grazer, pod] = await Promise.all([load(crystalUrl), load(pylonUrl), load(frondUrl), load(grazerUrl), load(podUrl)])
+    try {
+      this.v2 = await loadV2()
+    } catch (err) {
+      console.warn('V2 prototypes failed to load; continuing without them:', err)
+      this.v2 = null
+    }
     this.models = {
       crystal: crystal ?? undefined, pylon: pylon ?? undefined, frond: frond ?? undefined, grazer: grazer ?? undefined, pod: pod ?? undefined,
     }
@@ -231,7 +253,10 @@ export class Game {
     this.flora = new Flora(this.hf, this.models, dens.flora)
     this.floraDensity = dens.flora
     scene.add(this.flora.group)
-    this.biota = new Biota(this.hf, this.props.vents, dens.flora)
+    this.eco = new EcoGrid(this.hf)
+    this.successionModel = new SurveyModel(this.hf, this.v2, this.physics)
+    scene.add(this.successionModel.group)
+    this.biota = new Biota(this.hf, this.props.vents, dens.flora, this.eco, this.v2, QUALITY_LEVEL[settings.quality], this.physics)
     scene.add(this.biota.group)
     this.creatures = new Creatures(this.hf, this.models.grazer, 5)
     scene.add(this.creatures.group)
@@ -265,7 +290,7 @@ export class Game {
     this.camRig.setIgnoredBody(this.explorer.body)
 
     this.cine = new Cinematics({ hf: this.hf, props: this.props, path: this.veins.mainPath })
-    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures, biota: this.biota, player: () => this.explorer.position })
+    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures, biota: this.biota, eco: this.eco, survey: this.successionModel, player: () => this.explorer.position })
 
     const ringGeo = new THREE.RingGeometry(0.9, 1, 64)
     for (let i = 0; i < 8; i += 1) {
@@ -309,13 +334,13 @@ export class Game {
     this.scene.add(this.flora.group)
     this.scene.remove(this.biota.group)
     dispose(this.biota.group)
-    this.biota = new Biota(this.hf, this.props.vents, dens.flora)
+    this.biota = new Biota(this.hf, this.props.vents, dens.flora, this.eco, this.v2, QUALITY_LEVEL[this.store.data.settings.quality])
     this.scene.add(this.biota.group)
     this.scene.remove(this.atmosphere.group)
     dispose(this.atmosphere.group)
     this.atmosphere = new Atmosphere(this.veins.mainPath, dens.atmo)
     this.scene.add(this.atmosphere.group)
-    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures, biota: this.biota, player: () => this.explorer.position })
+    this.scannables = buildScannables({ props: this.props, hf: this.hf, flora: this.flora, creatures: this.creatures, biota: this.biota, eco: this.eco, survey: this.successionModel, player: () => this.explorer.position })
     this.floraDensity = dens.flora
   }
 
@@ -332,6 +357,8 @@ export class Game {
     U.uVit.value = this.view.vit
     U.uAct.value = this.view.act
     U.uPulse.value = 0
+    this.ecoRestored = p.ecoTiles ? this.eco.restore(p.ecoTiles, p.vitality) : false
+    if (!this.ecoRestored) this.eco.apply(p.vitality, true)
     this.water.update(this.view.vit, this.hf)
     if (teleport) {
       const pos = p.pos ? new THREE.Vector3(p.pos[0], p.pos[1], p.pos[2]) : this.spawn.clone()
@@ -503,7 +530,8 @@ export class Game {
     })
   }
 
-  startTeaser(): void {
+  startTeaser(kind: 'teaser' | 'transform' = 'teaser'): void {
+    this.teaserKind = kind
     this.setMode('teaser')
     this.cineT = 0
     this.teaserPaused = false
@@ -592,6 +620,8 @@ export class Game {
     const p = this.progress
     p.pos = [this.lastSafe.x, this.lastSafe.y, this.lastSafe.z]
     p.yaw = this.mode === 'opening' ? 0 : this.camRig.yaw
+    this.eco.apply(p.vitality)
+    p.ecoTiles = this.eco.serialize()
     this.store.saveProgress(p)
   }
 
@@ -625,6 +655,7 @@ export class Game {
 
   render(alpha: number, frameSeconds: number): void {
     const dt = Math.min(frameSeconds, 0.1)
+    this.recordFrame(frameSeconds)
     this.input.update()
     this.time += dt
     U.uTime.value = this.time
@@ -688,8 +719,10 @@ export class Game {
 
   private updateTeaser(dt: number): void {
     if (!this.teaserPaused) this.cineT += dt
-    const t = Math.min(this.cineT, TEASER_SECONDS)
-    this.cine.teaser(t, this.cineOut)
+    const dur = this.teaserKind === 'transform' ? TRANSFORM_SECONDS : TEASER_SECONDS
+    const t = Math.min(this.cineT, dur)
+    if (this.teaserKind === 'transform') this.cine.transformation(t, this.cineOut)
+    else this.cine.teaser(t, this.cineOut)
     const out = this.cineOut
     this.copyShot()
     this.hud.caption = out.caption
@@ -715,8 +748,8 @@ export class Game {
       this.explorer.root.visible = false
     }
     this.speedNow = this.explorer.speedH
-    if (t > 0.3) this.fireOnce('t-open', () => { this.audio.riser(6); this.audio.whoosh(4, 0.12) })
-    if (t > 6.3) this.fireOnce('t-dive', () => { this.audio.boom(); this.audio.whoosh(3, 0.18) })
+    if (this.teaserKind === 'teaser' && t > 0.3) this.fireOnce('t-open', () => { this.audio.riser(6); this.audio.whoosh(4, 0.12) })
+    if (this.teaserKind === 'teaser' && t > 6.3) this.fireOnce('t-dive', () => { this.audio.boom(); this.audio.whoosh(3, 0.18) })
     for (const ev of out.events) {
       if (ev.startsWith('seat')) {
         const i = Number(ev.slice(4))
@@ -730,8 +763,8 @@ export class Game {
         this.fireOnce(ev, () => this.stabilizeEffects())
       }
     }
-    this.hud.teaser = { time: t, duration: TEASER_SECONDS, paused: this.teaserPaused }
-    if (this.cineT >= TEASER_SECONDS && !this.transitionCb) this.exitTeaser()
+    this.hud.teaser = { time: t, duration: dur, paused: this.teaserPaused }
+    if (this.cineT >= dur && !this.transitionCb) this.exitTeaser()
   }
 
   private stabilizeEffects(): void {
@@ -814,6 +847,8 @@ export class Game {
       this.landT = 0.25
       const bm = biomeAt(this.hf, feet.x, feet.z)
       this.hud.land = `${BIOME_NAMES[bm]} - ${stageAt(feet.x, feet.z, this.view.vit).name}`
+      this.hud.eco = ECO_STAGES[P.eco.stage].name + (ecoSettling(P.eco, P.vitality) ? ' (settling)' : '')
+      this.hud.ecoIndex = P.eco.stage
     }
     const changed = advance(P, { inRegion: region ? { [region]: true } : {} })
     if (changed) this.onStageChanged(changed)
@@ -834,8 +869,9 @@ export class Game {
     this.invuln = Math.max(0, this.invuln - dt)
     if (this.invuln <= 0 && this.integrity < 100) this.integrity = Math.min(100, this.integrity + dt * 8)
     P.playTime += dt
-    if (P.stabilized && P.vitality < 1 && (this.pulseT < 0 || this.pulseT > 1.2)) {
-      P.vitality = Math.min(1, P.vitality + dt / CONFIG.world.recoverySeconds)
+    const ecoTarget = ECO_STAGES[P.eco.stage].vit
+    if (P.stabilized && P.vitality < ecoTarget && (this.pulseT < 0 || this.pulseT > 1.2)) {
+      P.vitality = Math.min(ecoTarget, P.vitality + (dt * 1.35) / CONFIG.world.recoverySeconds)
     }
     if (this.pulseT >= 0) {
       this.pulseT += dt
@@ -861,7 +897,7 @@ export class Game {
   private readCtx(): ReadCtx {
     return {
       player: this.explorer.root.position, vit: this.view.vit, act: this.view.act, progress: this.progress, props: this.props,
-      hf: this.hf, flora: this.flora, creatures: this.creatures, time: this.time,
+      hf: this.hf, flora: this.flora, creatures: this.creatures, eco: this.eco, time: this.time,
     }
   }
 
@@ -870,6 +906,8 @@ export class Game {
     this.saveNow()
     if (stage === 'transform') this.events.toast('The core is steady. Water is moving down the channel.', 'objective')
     else if (stage === 'basinObserve') this.events.toast('The basin is changing. Scan what has returned.', 'objective')
+    else if (stage === 'surgeGrowth') this.events.toast('Pioneer life is holding. The core can drive a stronger surge.', 'objective')
+    else if (stage === 'surgeThriving') this.events.toast('Growth has taken hold. One more surge remains.', 'objective')
     else if (stage === 'free') {
       this.events.toast('Survey complete.', 'objective')
       this.events.complete()
@@ -1052,6 +1090,10 @@ export class Game {
       if (stageIndex(P.stage) < stageIndex('repair')) consider(pd + 3, 'The Life-Core is unstable. Scan it first (Q).', true, false, null)
       else if (nodeCount(P) < 3) consider(pd + 3, `Link all three conduit nodes first (${nodeCount(P)}/3)`, true, false, null)
       else consider(pd, 'Hold to stabilize the Life-Core', false, true, null)
+    } else if (pd < 10 && P.stabilized && P.eco.stage < 3 && stageIndex(P.stage) >= stageIndex('surgeGrowth')) {
+      const next = ECO_STAGES[P.eco.stage + 1]
+      if (ecoSettling(P.eco, P.vitality)) consider(pd + 3, `The land is still responding (${ECO_STAGES[P.eco.stage].name}). Wait for it to settle.`, true, false, null)
+      else consider(pd, `Hold to channel the Life-Core surge (${next.name})`, false, true, null)
     }
     const b = best as { dist: number; text: string; blocked: boolean; hold: boolean; act: (() => void) | null } | null
     if (!b) {
@@ -1070,7 +1112,8 @@ export class Game {
         if (this.holdProgress >= 1) {
           this.holdProgress = 0
           this.audio.holdTone(null)
-          this.finishStabilize()
+          if (!P.stabilized) this.finishStabilize()
+          else this.tryEcoAdvance(P.eco.lastEvent + 1)
         }
       } else {
         this.holdProgress = Math.max(0, this.holdProgress - dt * 0.8)
@@ -1132,6 +1175,7 @@ export class Game {
     if (P.stabilized) return
     P.stabilized = true
     P.vitality = Math.max(P.vitality, 0.002)
+    this.tryEcoAdvance(P.eco.lastEvent + 1, true)
     this.pulseT = 0
     this.explorer.reach()
     this.stabilizeEffects()
@@ -1141,6 +1185,26 @@ export class Game {
     this.saveNow()
   }
 
+  /**
+   * Offer a Life-Core event to the ecological state machine. One accepted event gains exactly one state;
+   * duplicates, events during a transition and events past Thriving are rejected without side effects.
+   */
+  tryEcoAdvance(eventId: number, silent = false): EcoResult {
+    const P = this.progress
+    const res = requestEcoAdvance(P.eco, eventId, P.vitality)
+    this.ecoLog.push({ t: +P.playTime.toFixed(2), id: eventId, accepted: res.accepted, reason: res.reason, from: res.from, to: res.to })
+    if (!res.accepted) return res
+    this.pulseT = 0
+    if (!silent) {
+      this.stabilizeEffects()
+      const st = ECO_STAGES[res.to]
+      this.events.toast(`Life-Core surge accepted: ${st.name}. ${st.summary}`, 'objective')
+      const changed = advance(P, { inRegion: {} })
+      if (changed) this.onStageChanged(changed)
+    }
+    this.saveNow()
+    return res
+  }
   private ripple(pos: THREE.Vector3, color: string, max: number, dur: number, flat: boolean): void {
     const r = this.ripples.find(x => !x.active) ?? this.ripples[0]
     r.active = true
@@ -1240,6 +1304,13 @@ export class Game {
     if (charging && !this.ventPhaseBefore && (this.mode === 'playing' || this.mode === 'teaser')) this.audio.ventCharge()
     this.ventPhaseBefore = charging
     this.creatures.update(dt, this.time, v.vit, body, this.explorer.speedH)
+    this.biota.update(dt, camPos, v.vit)
+    this.successionModel?.update(this.time, P.eco.stage, v.vit)
+    this.ecoClock += dt
+    if (this.ecoClock > 0.25) {
+      this.ecoClock = 0
+      this.eco.apply(v.vit)
+    }
     this.atmosphere.update(dt, this.time, camPos, v.vit, v.act, P.stabilized || (this.mode === 'teaser' && v.act >= 1), this.renderer.gl.domElement.height)
     this.explorer.animate(dt, this.time)
     for (const r of this.ripples) {
@@ -1324,6 +1395,63 @@ export class Game {
 
   // ---- debug / test hooks ---------------------------------------------------------------------
   /** Test hook: put the explorer on the ground at (x, z). */
+  /** Rolling frame-time statistics (last 240 frames) for the telemetry overlay and tests. */
+  private recordFrame(seconds: number): void {
+    const f = this.perf
+    f.frames += 1
+    f.samples.push(seconds * 1000)
+    if (f.samples.length > 240) f.samples.shift()
+    if (f.frames % 20 === 0) {
+      const sorted = [...f.samples].sort((a, b) => a - b)
+      f.avg = sorted.reduce((a, b) => a + b, 0) / sorted.length
+      f.p95 = sorted[Math.floor(sorted.length * 0.95)] ?? 0
+      f.max = sorted[sorted.length - 1] ?? 0
+    }
+  }
+  /** Telemetry snapshot: frame times, renderer counters and V2 LOD/cull state. */
+  telemetry(): Record<string, unknown> {
+    const info = this.renderer.gl.info
+    const v2 = this.biota?.v2
+    return {
+      fps: this.perf.avg > 0 ? +(1000 / this.perf.avg).toFixed(1) : 0, frameMsAvg: +this.perf.avg.toFixed(2), frameMsP95: +this.perf.p95.toFixed(2), frameMsMax: +this.perf.max.toFixed(2),
+      drawCalls: info.render.calls, triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures,
+      v2Instances: v2?.stats.instances ?? 0, v2Chunks: v2?.stats.chunks ?? 0, v2ChunksHi: v2?.visibleHi ?? 0, v2ChunksLo: v2?.visibleLo ?? 0,
+      quality: this.store.data.settings.quality,
+    }
+  }
+  /** Test hook: jump the ecological state machine to a state and (optionally) settle the world to it instantly. */
+  debugSetEco(stage: 0 | 1 | 2 | 3, instant = true): void {
+    const P = this.progress
+    if (stage > 0) {
+      P.stabilized = true
+      P.nodes = [true, true, true]
+      for (let i = 0; i < 3; i += 1) this.props.setNodeVisual(i, true, false)
+    }
+    P.eco.stage = stage
+    P.eco.lastEvent = Math.max(P.eco.lastEvent, stage)
+    if (instant) P.vitality = ECO_STAGES[stage].vit
+    this.view.vit = P.vitality
+    this.view.act = P.stabilized ? 1 : this.view.act
+    this.eco.apply(P.vitality, true)
+  }
+  debugEcoSnapshot(x: number, z: number): Record<string, unknown> {
+    const t = this.eco.sample(x, z)
+    return { stage: this.progress.eco.stage, lastEvent: this.progress.eco.lastEvent, vit: this.progress.vitality, hash: this.eco.hash(), meanLife: +this.eco.meanLife().toFixed(4), lifecycleShare: this.eco.lifecycleShare().map(v => +v.toFixed(3)), tile: t, restored: this.ecoRestored, log: this.ecoLog }
+  }
+  /** Test hook: seek the running teaser/transformation film to a time (seconds) and keep it paused there. */
+  debugCineSeek(t: number): void {
+    this.cineT = t
+    this.teaserPaused = true
+    // Evaluate the film at exactly t and settle the ecology tile grid to that vitality immediately.
+    if (this.teaserKind === 'transform') {
+      this.cine.transformation(Math.min(t, TRANSFORM_SECONDS), this.cineOut)
+      this.eco.apply(this.cineOut.view?.vit ?? 0, true)
+    }
+  }
+  /** Test hook: change the full-recovery duration so ramp/plateau behaviour can be tested quickly. */
+  debugRecoverySeconds(s: number): void {
+    ;(CONFIG.world as { recoverySeconds: number }).recoverySeconds = s
+  }
   debugTeleport(x: number, z: number, yaw = 0): void {
     this.explorer.teleport(x, this.hf.heightAt(x, z), z, yaw)
     this.lastSafe.set(x, this.hf.heightAt(x, z), z)
@@ -1335,7 +1463,7 @@ export class Game {
     return {
       mode: this.mode, stage: this.progress.stage, pos: [p.x, p.y, p.z], vit: this.progress.vitality, act: this.view.act, nodes: this.progress.nodes,
       shards: this.progress.shards, shardsFound: this.progress.shardsFound.length, discoveries: Object.keys(this.progress.discoveries), stabilized: this.progress.stabilized,
-      integrity: this.integrity, scanMode: this.scanMode, lock: this.lock?.s.key ?? null, region: this.regionNow, count: DISCOVERIES.length, vent: VENT_RADIUS,
+      eco: this.progress.eco, ecoHash: this.eco?.hash(), integrity: this.integrity, scanMode: this.scanMode, lock: this.lock?.s.key ?? null, region: this.regionNow, count: DISCOVERIES.length, vent: VENT_RADIUS,
     }
   }
 

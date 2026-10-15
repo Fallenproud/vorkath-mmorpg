@@ -1,0 +1,32 @@
+PASS A1 title screen has Before/After button 
+PASS A2 new game starts Scarred, eco stage 0 {"stage":0,"lastEvent":0}
+PASS A3 V2 imports instantiated {"instances":700,"chunks":46}
+PASS B1 hold-prompt shown at the core 
+PASS B2 first hold stabilizes and enters Pioneer (state 1) {"stage":1,"lastEvent":1}
+PASS B3 ecoLog records one accepted event [{"t":4.16,"id":1,"accepted":true,"reason":"ok","from":0,"to":1}]
+PASS B4 vitality plateaus at the Pioneer target (0.30), no runaway to 1 vit=0.3
+PASS C1 duplicate event id rejected {"accepted":false,"reason":"duplicate","from":1,"to":1}
+PASS C2 event during transition rejected {"accepted":false,"reason":"in-transition","from":1,"to":1}
+PASS C3 rejected events leave stage unchanged 
+PASS D1 second hold accepted: Growth (state 2) {"stage":2,"lastEvent":2}
+PASS D2 holding while Growth is still settling does not skip a state stage=2 vit=0.3
+PASS D3 third surge accepted: Thriving (state 3) {"stage":3,"lastEvent":3}
+PASS D4 vitality reaches 1.0 vit=1
+PASS D5 event past Thriving rejected {"accepted":false,"reason":"max-stage","from":3,"to":3}
+PASS D6 accepted transitions were exactly 1,2,3 in order [1,2,3]
+PASS D7 HUD land state reads Thriving Thriving
+PASS E1 eco stage, event id and vitality persist across reload {"snap":{"hash":"40d0da6d","mean":0.13383997140248238,"stage":3,"vit":1,"last":3},"after":{"hash":"40d0da6d","mean":0.13386123914604994,"stage":3,"vit":1,"last":3,"restored":true,"hud":"Thriving","v2":700}}
+PASS E2 tile grid restored from save and identical hash 40d0da6d -> 40d0da6d restored=true
+PASS E3 HUD shows Thriving after reload 
+PASS E4 duplicate event still rejected after reload 
+PASS F0 located save and wrote corrupt tile blob 
+PASS F0b corrupt blob still in storage before Continue AAAA
+PASS F1 corrupt tile blob is rejected and recomputed from vitality {"stage":3,"restored":false,"hash":"40d0da6d","mode":"playing"}
+PASS F2a legacy fixture has no eco block {"hasEco":false,"stab":true}
+PASS F2 pre-V2 save (no eco block, stabilized) loads at Thriving {"stage":3,"vit":1}
+PASS G1 W key still moves the explorer [[0,3.4,150],[0,3.4,145.4]]
+PASS G2 journal opens with J 
+telemetry (swiftshader software GL, low quality, 640x360): {"fps":10.1,"frameMsAvg":99.2,"frameMsP95":250,"frameMsMax":250,"drawCalls":210,"triangles":644680,"geometries":212,"textures":21,"v2Instances":700,"v2Chunks":46,"v2ChunksHi":0,"v2ChunksLo":5,"quality":"low"}
+PASS H1 no console errors during run []
+
+29/29 checks passed

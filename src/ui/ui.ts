@@ -9,6 +9,7 @@ export interface UiHandlers {
   newGame(): void
   continueGame(): void
   teaser(): void
+  transform(): void
   resume(): void
   quit(): void
   skip(): void
@@ -123,6 +124,7 @@ export class Ui {
       <button id="btnContinue" class="primary" data-act="continue">Continue<small id="continueInfo"></small></button>
       <button id="btnNew" data-act="new">New Game</button>
       <button data-act="teaser">Watch the Teaser</button>
+      <button data-act="transform">Before / After Film</button>
       <button data-act="controls">How to Play</button>
       <button data-act="settings">Settings</button>
       <button data-act="about">About and Limitations</button>
@@ -135,7 +137,7 @@ export class Ui {
   <div id="scanVignette" class="scan-vignette"></div>
   <div id="objective" class="panel objective"><div class="label">Objective</div><div id="objTitle" class="obj-title"></div><div id="objDetail" class="obj-detail"></div><div id="objProgress" class="obj-progress"></div><div id="objDist" class="obj-dist"></div></div>
   <div class="compass"><div id="compassTrack" class="compass-track"></div><div id="compassMark" class="compass-mark hidden">&#9670;</div><div class="compass-center"></div></div>
-  <div class="panel topright"><div id="regionName" class="region-name"></div><div id="landName" class="land-name"></div><div class="stat-row"><span>Journal</span><b id="statDisc">0/25</b></div><div class="stat-row"><span>Recovery</span><b id="statVit">0%</b></div><div class="mini-bar"><div id="vitBar"></div></div></div>
+  <div class="panel topright"><div id="regionName" class="region-name"></div><div id="landName" class="land-name"></div><div class="stat-row"><span>Journal</span><b id="statDisc">0/25</b></div><div class="stat-row"><span>Recovery</span><b id="statVit">0%</b></div><div class="stat-row"><span>Land state</span><b id="statEco">Scarred</b></div><div class="eco-pips" id="ecoPips"><i></i><i></i><i></i><i></i></div><div class="mini-bar"><div id="vitBar"></div></div></div>
   <div id="regionBanner" class="region-banner"></div>
   <div class="panel bottomleft"><div class="stat-row"><span>Suit</span><b id="statSuit">100%</b></div><div class="mini-bar suit"><div id="suitBar"></div></div><div class="chips"><span class="chip"><i class="ico shard"></i><b id="chipShards">0</b> shards</span><span class="chip"><i class="ico ore"></i><b id="chipOre">0</b> ore</span><span class="chip"><i class="ico node"></i><b id="chipNodes">0</b>/3 nodes</span></div></div>
   <div id="prompt" class="prompt hidden"><span class="key">E</span><span id="promptText"></span><div id="promptHold" class="hold hidden"><div id="promptHoldBar"></div></div></div>
@@ -245,6 +247,7 @@ export class Ui {
         else this.h.newGame()
         break
       case 'teaser': this.h.teaser(); break
+      case 'transform': this.h.transform(); break
       case 'controls': this.openModal('controls'); break
       case 'settings': this.openModal('settings'); break
       case 'about': this.openModal('about'); break
@@ -508,6 +511,14 @@ ${check('hints', 'Show on-screen key hints', s.hints)}
   // ------------------------------------------------------------------------------------------
   // Per-frame
   // ------------------------------------------------------------------------------------------
+  private ecoPipIndex = -1
+  private setEcoPips(index: number): void {
+    if (index === this.ecoPipIndex) return
+    this.ecoPipIndex = index
+    const kids = this.els['ecoPips']?.children
+    if (!kids) return
+    for (let i = 0; i < kids.length; i += 1) kids[i].classList.toggle('on', i <= index)
+  }
   private setText(id: string, text: string): void {
     if (this.cache.get(id) === text) return
     this.cache.set(id, text)
@@ -561,6 +572,8 @@ ${check('hints', 'Show on-screen key hints', s.hints)}
     }
     this.setText('statDisc', `${h.discoveries}/${DISCOVERIES.length}`)
     this.setText('statVit', `${Math.round(h.vitality * 100)}%`)
+    this.setText('statEco', h.eco)
+    this.setEcoPips(h.ecoIndex)
     this.setStyle('vitBar', 'width', `${Math.round(h.vitality * 100)}%`)
     this.setText('statSuit', `${Math.round(h.integrity)}%`)
     this.setStyle('suitBar', 'width', `${Math.max(0, Math.round(h.integrity))}%`)

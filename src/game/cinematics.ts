@@ -4,6 +4,7 @@ import { POI } from './layout'
 import type { Props } from './props'
 import type { Shot } from './camera'
 import { clamp, smooth } from '../engine/noise'
+import { ECO_STAGES } from './ecostate'
 
 export interface ViewState {
   vit: number
@@ -43,6 +44,8 @@ export interface CineOut {
 export const OPENING_SECONDS = 20
 export const OPENING_HANDOVER = 18.6
 export const TEASER_SECONDS = 66
+/** Before / After transformation film: same camera path before and after the Life-Core surges. */
+export const TRANSFORM_SECONDS = 52
 
 const ease = (x: number) => x * x * (3 - 2 * x)
 const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
@@ -148,6 +151,91 @@ export class Cinematics {
     out.caption = t > 12.2 && t < 17.6 ? { text: 'A faint pulse to the north', sub: 'Find the signal. Scan the world with Q.', alpha: capAlpha(t, 12.2, 17.6) } : null
   }
 
+
+  /**
+   * Before / After transformation film (WP-07). Pass 1 flies a fixed arc over the Recovery Basin in the Scarred
+   * state; a core sequence stabilizes the Life-Core; pass 2 replays the identical arc while the real ecology
+   * (same tile grid, flora thresholds and terrain shader as gameplay) steps through Pioneer, Growth and Thriving.
+   */
+  transformation(t: number, out: CineOut): void {
+    const { props } = this.env
+    out.events.length = 0
+    out.phase = 'world'
+    out.haze = 0
+    out.explorer = null
+    out.black = Math.max(1 - smooth(0, 1.2, t), smooth(TRANSFORM_SECONDS - 1.6, TRANSFORM_SECONDS, t))
+    const view: Partial<ViewState> = { vit: 0, act: 0, hold: 0, nodes: [false, false, false], pulse: 0 }
+    out.view = view
+    const cam = out.shot
+    const fx = POI.basin.x - 3
+    const fz = POI.basin.z + 5
+    const arc = (u: number) => {
+      const a = 3.45 + u * 0.78
+      const r = 42 - 8 * u
+      const x = fx + Math.cos(a) * r
+      const z = fz + Math.sin(a) * r
+      cam.pos.set(x, Math.max(this.g(x, z) + 7, this.g(fx, fz) + 15 - 4 * u), z)
+      cam.look.set(fx, this.g(fx, fz) + 3.2, fz)
+      cam.fov = 54 - 4 * u
+    }
+    const stand = () => {
+      const ex = fx - 17
+      const ez = fz + 9
+      out.explorer = { pos: this.tmp.set(ex, this.g(ex, ez), ez).clone(), yaw: Math.atan2(-(fx - ex), -(fz - ez)), speed: 0 }
+    }
+    const pioneer = ECO_STAGES[1].vit
+    const growth = ECO_STAGES[2].vit
+    // ---- Pass 1: BEFORE (1.2 - 11.5)
+    if (t < 11.5) {
+      arc(ease(ramp(t, 0, 11.5)) * 0.5)
+      stand()
+      out.caption = { text: 'BEFORE', sub: 'The Recovery Basin: scarred rock, dry channel, almost no life', alpha: capAlpha(t, 1.2, 10.4) }
+      return
+    }
+    // ---- Core sequence: link, stabilize, surge (11.5 - 22)
+    if (t < 22) {
+      const c = props.pylonPos
+      const u = ramp(t, 11.5, 22)
+      const a = 0.6 + u * 1.1
+      const r = 24 - 6 * ease(u)
+      cam.pos.set(c.x + Math.cos(a) * r, this.g(c.x + Math.cos(a) * r, c.z + Math.sin(a) * r) + 5.5 - 2 * u, c.z + Math.sin(a) * r)
+      cam.look.set(c.x, c.y + 5, c.z)
+      cam.fov = 56
+      view.act = ease(ramp(t, 13.2, 17.5))
+      view.hold = ramp(t, 13.5, 17)
+      view.nodes = [t > 12.4, t > 12.9, t > 13.4]
+      if (t > 12.4) out.events.push('seat0')
+      if (t > 12.9) out.events.push('seat1')
+      if (t > 13.4) out.events.push('seat2')
+      if (t > 17) { view.act = 1; out.events.push('stabilize'); view.pulse = (t - 17) * 55 }
+      view.vit = t > 17.6 ? pioneer * ease(ramp(t, 17.6, 22)) : 0
+      out.caption = { text: 'The Life-Core is stabilized', sub: 'One surge, one ecological state', alpha: capAlpha(t, 15.4, 21) }
+      return
+    }
+    // ---- Pass 2: AFTER, identical arc, ecology advancing (22 - 50.4)
+    view.act = 1
+    view.nodes = [true, true, true]
+    let vit = pioneer
+    let label = 'STATE 2 - PIONEER'
+    let sub = ECO_STAGES[1].summary
+    if (t >= 30 && t < 37) {
+      vit = pioneer + (growth - pioneer) * ease(ramp(t, 30, 36))
+      label = 'STATE 3 - GROWTH'
+      sub = ECO_STAGES[2].summary
+    } else if (t >= 37) {
+      vit = growth + (1 - growth) * ease(ramp(t, 37, 44))
+      label = 'STATE 4 - THRIVING'
+      sub = ECO_STAGES[3].summary
+    }
+    if (t < 30) vit = pioneer
+    view.vit = vit
+    arc(ease(ramp(t, 22, 50.4)))
+    stand()
+    const capStart = t < 30 ? 22.4 : t < 37 ? 30.4 : 37.4
+    const capEnd = t < 30 ? 29.6 : t < 37 ? 36.6 : 50.2
+    out.caption = { text: label, sub, alpha: capAlpha(t, capStart, capEnd) }
+    if (t > 44 && t < 50.2) out.caption = { text: 'AFTER', sub: 'The same basin, alive. Life follows water and soil, not a countdown.', alpha: capAlpha(t, 44.6, 50.2) }
+  }
   /** Dedicated live-scene teaser. Drives world state, the explorer and the camera. */
   teaser(t: number, out: CineOut): void {
     const { props } = this.env

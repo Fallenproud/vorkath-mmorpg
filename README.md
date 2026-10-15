@@ -34,6 +34,12 @@ Details, reference list, asset classes and test results: [`docs/CANON_PACK_INTEG
 - HUD shows the biome and stage under the explorer.
 - Pack images are visual targets only; nothing from the pack is shipped. Species names are PROPOSED, not approved canon.
 
+## Iteration 3: Environment Integration V2
+
+Four ecological states (Scarred, Pioneer, Growth, Thriving) reached by three Life-Core surges, ten supplied GLB prototypes imported and upgraded, biome-dependent vegetation, new scanner targets, an Observation Point Succession Model and an in-game **Before / After Film** (title menu).
+Full implementation and test report: [docs/v2/V2_REPORT.md](docs/v2/V2_REPORT.md). Evidence (video, comparison images, run logs): `docs/v2/evidence/`. Repeatable browser tests: `scripts/e2e/`.
+Latest run: 26 / 26 unit tests, 29 / 29 browser end-to-end checks (software-rendered Chromium; real-GPU performance not measured).
+
 ## Presentation
 
 - Main menu: Continue (shows stage and progress), New Game, Watch the Teaser, How to Play, Settings, About and Limitations.

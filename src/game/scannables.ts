@@ -10,6 +10,8 @@ import { SPECIES } from './biota'
 import { BIOME_NAMES, biomeAt, stageAt } from './ecology'
 import { growthFront, nodeCount, type Progress } from './state'
 import { U } from './uniforms'
+import { ECO_STAGES, type EcoGrid } from './ecostate'
+import type { SurveyModel } from './surveymodel'
 
 export interface ReadCtx {
   player: THREE.Vector3
@@ -20,6 +22,7 @@ export interface ReadCtx {
   hf: HeightField
   flora: Flora
   creatures: Creatures
+  eco: EcoGrid
   time: number
 }
 
@@ -47,7 +50,7 @@ const bearing = (from: THREE.Vector3, to: THREE.Vector3) => {
 }
 const dist = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z)
 
-export function buildScannables(env: { props: Props; hf: HeightField; flora: Flora; creatures: Creatures; biota: Biota; player: () => THREE.Vector3 }): Scannable[] {
+export function buildScannables(env: { props: Props; hf: HeightField; flora: Flora; creatures: Creatures; biota: Biota; eco: EcoGrid; survey: SurveyModel | null; player: () => THREE.Vector3 }): Scannable[] {
   const { props, hf, flora, creatures, biota } = env
   const always = () => true
   const out: Scannable[] = []
@@ -244,12 +247,19 @@ export function buildScannables(env: { props: Props; hf: HeightField; flora: Flo
     { id: 'mycoid', discovery: 'mycoid', radius: 1.8, lift: 0.9, note: 'Stalked crimson caps', habitat: 'Foothills and crystal-field edge' },
     { id: 'lobloom', discovery: 'lobloom', radius: 4.2, lift: 3.4, note: 'Glowing-lobe canopy tree', habitat: 'Damp stable soil near water' },
     { id: 'kelp', discovery: 'kelp', radius: 2.4, lift: 1.2, note: 'Pool-bed ribbon fronds', habitat: 'Warm silt under open water' },
+    { id: 'pioneer', discovery: 'pioneer', radius: 4.5, lift: 0.3, note: 'Low cushion colonies, rust rim', habitat: 'Cooled rock with a little soil and moisture' },
+    { id: 'reed', discovery: 'reed', radius: 1.9, lift: 1.0, note: 'Curved olive blade clumps', habitat: 'Level ground at the pool rim and channel' },
+    { id: 'shrub', discovery: 'shrub', radius: 2.0, lift: 0.8, note: 'Branching shrub, red/violet dry, olive damp', habitat: 'Gentle soil slopes, foothills and basin' },
+    { id: 'canopy', discovery: 'canopy', radius: 4.6, lift: 3.6, note: 'Broad-crowned tree, flared trunk', habitat: 'Deep damp soil beside water, Thriving only' },
+    { id: 'rubble', discovery: 'rubble', radius: 2.4, lift: 0.8, note: 'Fractured basalt, moss on upper faces', habitat: 'Ridge and crystal-field slopes' },
+    { id: 'outcrop', discovery: 'outcrop', radius: 3.0, lift: 2.2, note: 'Crystal cluster on a basalt base', habitat: 'Crystal field (red) and Life-Core halo (turquoise)' },
   ]
   for (const b of bioDefs) {
     const def = SPECIES.find(x => x.id === b.id)!
     const list = biota.specimens[b.id]
     if (!list.length) continue
-    const grown = (vit: number, t: number) => b.id === 'gasmat' || vit > t + GROW
+    const fixed = b.id === 'gasmat' || b.id === 'rubble' || b.id === 'outcrop'
+    const grown = (vit: number, t: number) => fixed || vit > t + GROW
     const nearest = (vit: number) => {
       const me = env.player()
       let best = list[0]
@@ -289,14 +299,39 @@ export function buildScannables(env: { props: Props; hf: HeightField; flora: Flo
         const sp = nearest(c.vit)
         const age = c.vit - sp.threshold
         const stage = stageAt(sp.pos.x, sp.pos.z, c.vit)
+        const tile = c.eco.sample(sp.pos.x, sp.pos.z)
         return [
           ['Form', b.note],
           ['Habitat', b.habitat],
           ['Biome here', BIOME_NAMES[biomeAt(hf, sp.pos.x, sp.pos.z)]],
           ['Ground stage', stage.name],
-          ['Growth', b.id === 'gasmat' ? 'Mineral deposit' : pct(age / 0.3)],
+          ['Growth', fixed ? (b.id === 'rubble' ? `Moss cover ${pct((c.vit - sp.threshold) / 0.3)}` : 'Fixed landmark') : pct(age / 0.3)],
+          ['lifeSpread here', pct(tile.life)],
+          ['Water availability', pct(tile.water)],
+          ['Soil / nutrient', pct(tile.nutrient)],
+          ['Local lifecycle', ECO_STAGES[tile.lifecycle].name],
           ['Colony size', `${biota.counts[b.id]} placed in this slice`],
           ['Distance', `${Math.round(dist(c.player, self))} m`],
+        ]
+      },
+    })
+  }
+  // ---- Succession model at the Observation Point ---------------------------------------------------
+  if (env.survey) {
+    const sv = env.survey
+    add({
+      key: 'stagemodel', discovery: 'stagemodel', name: 'Succession model', pos: () => sv.centre.clone().add(new THREE.Vector3(0, 0.8, 0)), radius: 3.2, range: 45,
+      enabled: always, seconds: 1.4,
+      readings: (c) => {
+        const share = c.eco.lifecycleShare()
+        const st = c.progress.eco.stage
+        return [
+          ['Current state', `${ECO_STAGES[st].name} (${st + 1}/4)`],
+          ['State summary', ECO_STAGES[st].summary],
+          ['Mean lifeSpread', pct(c.eco.meanLife())],
+          ['Tiles by local state', `S ${pct(share[0])} / P ${pct(share[1])} / G ${pct(share[2])} / T ${pct(share[3])}`],
+          ['Next surge', st >= 3 ? 'None - fully recovered' : `Core surge to ${ECO_STAGES[st + 1].name}`],
+          ['Model tiles', 'VP_STAGE_01-04 prototypes'],
         ]
       },
     })

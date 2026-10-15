@@ -1,0 +1,19 @@
+nohup: ignoring input
+  readings Form: Low cushion colonies, rust rim | Habitat: Cooled rock with a little soil and moisture | Biome here: Life-Core conduit halo | Ground stage: Mature flora | Growth: 100% | lifeSpread here: 69% | Water availability: 21% | Soil / nutrient: 62% | Local lifecycle: Thriving | Colony size: 168 placed in this slice | Distance: 9 m
+bio-pioneer FAILED
+  readings Form: Curved olive blade clumps | Habitat: Level ground at the pool rim and channel | Biome here: Mineral stream corridor | Ground stage: Mature flora | Growth: 100% | lifeSpread here: 91% | Water availability: 96% | Soil / nutrient: 89% | Local lifecycle: Thriving | Colony size: 192 placed in this slice | Distance: 9 m
+bio-reed scanned
+  readings Form: Branching shrub, red/violet dry, olive damp | Habitat: Gentle soil slopes, foothills and basin | Biome here: Mineral stream corridor | Ground stage: Mature flora | Growth: 100% | lifeSpread here: 92% | Water availability: 100% | Soil / nutrient: 83% | Local lifecycle: Thriving | Colony size: 60 placed in this slice | Distance: 0 m
+bio-shrub scanned
+  readings Form: Broad-crowned tree, flared trunk | Habitat: Deep damp soil beside water, Thriving only | Biome here: Mineral stream corridor | Ground stage: Mature flora | Growth: 44% | lifeSpread here: 92% | Water availability: 100% | Soil / nutrient: 84% | Local lifecycle: Thriving | Colony size: 6 placed in this slice | Distance: 12 m
+bio-canopy scanned
+  readings Form: Fractured basalt, moss on upper faces | Habitat: Ridge and crystal-field slopes | Biome here: Early soil basin | Ground stage: Mature flora | Growth: Moss cover 100% | lifeSpread here: 93% | Water availability: 77% | Soil / nutrient: 91% | Local lifecycle: Thriving | Colony size: 230 placed in this slice | Distance: 9 m
+bio-rubble scanned
+  readings Form: Crystal cluster on a basalt base | Habitat: Crystal field (red) and Life-Core halo (turquoise) | Biome here: Life-Core conduit halo | Ground stage: Mature flora | Growth: Fixed landmark | lifeSpread here: 69% | Water availability: 64% | Soil / nutrient: 62% | Local lifecycle: Thriving | Colony size: 44 placed in this slice | Distance: 10 m
+bio-outcrop scanned
+  readings Current state: Thriving (4/4) | State summary: Dense cover and mature trees only where water and soil permit. | Mean lifeSpread: 13% | Tiles by local state: S 70% / P 13% / G 8% / T 9% | Next surge: None - fully recovered | Model tiles: VP_STAGE_01-04 prototypes
+stagemodel scanned
+discoveries ["outcrop","reed","shrub","canopy","rubble","stagemodel"]
+land Scar foothills - Scar
+persist before 6 after 6 playing 1 true
+errors []

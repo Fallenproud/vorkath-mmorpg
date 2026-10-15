@@ -47,7 +47,8 @@ async function boot(): Promise<void> {
   const ui = new Ui(root, store, audio, {
     newGame: () => { audio.unlock(); game?.newGame() },
     continueGame: () => { audio.unlock(); game?.continueGame(); window.setTimeout(tryLock, 60) },
-    teaser: () => { audio.unlock(); game?.startTeaser() },
+    teaser: () => { audio.unlock(); game?.startTeaser('teaser') },
+    transform: () => { audio.unlock(); game?.startTeaser('transform') },
     resume: resumeGame,
     quit: () => { input.unlockPointer(); game?.toTitle() },
     skip: () => game?.skipCinematic(),
