@@ -1,5 +1,7 @@
 # VORKATH: VORATH PRIME - The Scarred Frontier (vertical slice)
 
+_Vorkath Living World Sandbox RPG_
+
 A playable browser 3D science-fantasy exploration slice built with Three.js, Rapier and TypeScript (Vite).
 You play a human survey explorer in graphite/obsidian armor with crimson accents and teal details,
 crossing one continuous alien region, scanning its features, stabilizing an exposed Life-Core and
