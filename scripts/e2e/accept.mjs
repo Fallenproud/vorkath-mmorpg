@@ -1,5 +1,5 @@
 // Acceptance B (reach all six locations), D (landmarks unchanged, flora differs), F (stage metrics), H (import report)
-import { chromium } from '/home/ubuntu/vorkathprime/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright'
 import fs from 'fs'
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] })
 const page = await (await browser.newContext({ viewport: { width: 960, height: 540 } })).newPage()

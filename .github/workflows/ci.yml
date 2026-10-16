@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Unit tests: terrain route reachability, game loop, ecology state machine.
+      - run: pnpm test
+
+      # Typecheck + production build + JS/font size budgets (see scripts/check-size.mjs).
+      - run: pnpm build:static
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vorkath-dist
+          path: dist
+          retention-days: 7

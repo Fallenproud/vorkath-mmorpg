@@ -1,5 +1,5 @@
 // V2 end-to-end: real input for the Life-Core holds; debug hooks only to stage prerequisites and speed the ramp.
-import { chromium } from '/home/ubuntu/vorkathprime/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright'
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] })
 const ctx = await browser.newContext({ viewport: { width: 640, height: 360 } })
 const page = await ctx.newPage()

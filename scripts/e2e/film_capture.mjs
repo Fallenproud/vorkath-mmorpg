@@ -1,5 +1,5 @@
 // Deterministic capture of the in-game Before/After film: seek the real running scene to t = i/FPS and screenshot it.
-import { chromium } from '/home/ubuntu/vorkathprime/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright'
 import fs from 'fs'
 const FPS = +(process.env.FPS || 12), DUR = 52
 const from = +(process.argv[2] || 0), to = +(process.argv[3] || Math.floor(FPS * DUR))
