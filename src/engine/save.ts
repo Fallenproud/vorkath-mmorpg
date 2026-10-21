@@ -1,6 +1,6 @@
 import { parseProgress, type Progress } from '../game/state'
 
-export type Quality = 'low' | 'medium' | 'high'
+export type Quality = 'low' | 'medium' | 'high' | 'ultra'
 
 export interface Settings {
   master: number
@@ -40,7 +40,7 @@ export function parseSettings(raw: unknown): Settings {
     master: clamp(r.master, 0, 1, d.master), music: clamp(r.music, 0, 1, d.music), sfx: clamp(r.sfx, 0, 1, d.sfx),
     ambience: clamp(r.ambience, 0, 1, d.ambience), muted: r.muted === true,
     sensitivity: clamp(r.sensitivity, 0.3, 2.5, d.sensitivity), invertY: r.invertY === true,
-    quality: r.quality === 'low' || r.quality === 'medium' || r.quality === 'high' ? r.quality : d.quality,
+    quality: r.quality === 'low' || r.quality === 'medium' || r.quality === 'high' || r.quality === 'ultra' ? r.quality : d.quality,
     reducedMotion: r.reducedMotion === true, hints: r.hints !== false, fov: clamp(r.fov, 50, 85, d.fov),
   }
 }

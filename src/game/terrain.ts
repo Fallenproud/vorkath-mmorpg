@@ -4,6 +4,7 @@ import { CELL, WORLD_HALF } from './layout'
 import { GRID, type HeightField } from './heightfield'
 import { U } from './uniforms'
 import { REACH } from './ecology'
+import { PBR, PBR_MEAN, PBR_MEAN_ROUGH } from './pbr'
 
 const NOISE = /* glsl */ `
 float h21(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -17,6 +18,53 @@ vec3 vor(vec2 p){ vec2 ip = floor(p), fp = fract(p); float d1 = 8., d2 = 8., id 
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){ vec2 g = vec2(float(i), float(j)); vec2 o = vec2(h21(ip + g), h21(ip + g + 71.3)); vec2 r = g + o - fp; float d = dot(r, r);
     if (d < d1){ d2 = d1; d1 = d; id = h21(ip + g + 13.7); } else if (d < d2){ d2 = d; } }
   return vec3(sqrt(d1), sqrt(d2), id); }
+`
+
+
+/** Per-layer mean albedo / roughness of the source textures, emitted as GLSL constants. */
+const PBR_CONSTS = PBR_MEAN.map((m, i) => `const vec3 PBR_M${i} = vec3(${m[0]}, ${m[1]}, ${m[2]}); const float PBR_R${i} = ${PBR_MEAN_ROUGH[i]};`).join('\n')
+const PBR_GLSL = /* glsl */ `
+uniform float uPbrMix, uPbrDbg;
+${PBR_CONSTS}
+uniform highp sampler2DArray tPbrDiff;
+uniform highp sampler2DArray tPbrNor;
+uniform highp sampler2DArray tPbrArm;
+struct PbrS { vec3 rel; float ao; float rough; vec3 n; };
+// Planar (top-down) sample. Albedo is returned relative to the layer mean so the Vorkath palette stays in charge
+// and the texture only contributes structure; a second rotated, larger-scale albedo fetch breaks up tiling.
+PbrS pbrTop(float L, vec2 P, vec3 N, vec3 M, float R, float tile, float nStr){
+  vec2 uv = P / tile;
+  vec2 uv2 = vec2(uv.x * 0.8 - uv.y * 0.6, uv.x * 0.6 + uv.y * 0.8) * 0.27 + 0.37;
+  vec3 a1 = texture(tPbrDiff, vec3(uv, L)).rgb;
+  vec3 a2 = texture(tPbrDiff, vec3(uv2, L)).rgb;
+  vec3 arm = texture(tPbrArm, vec3(uv, L)).rgb;
+  vec3 t = texture(tPbrNor, vec3(uv, L)).rgb * 2.0 - 1.0;
+  PbrS s;
+  s.rel = clamp(a1 / M, 0.15, 3.0) * mix(vec3(1.0), clamp(a2 / M, 0.4, 2.0), 0.5);
+  s.ao = arm.r;
+  s.rough = arm.g / R;
+  s.n = normalize(vec3(N.x + t.x * nStr, N.y, N.z - t.y * nStr)); // image up = -z, image right = +x
+  return s;
+}
+// Biplanar (X and Z projections) for cliff faces; image up = world up.
+PbrS pbrWall(float L, vec3 wp, vec3 N, vec3 M, float R, float tile, float nStr){
+  vec2 uvX = vec2(wp.z, -wp.y) / tile;
+  vec2 uvZ = vec2(wp.x, -wp.y) / tile;
+  float wx = pow(abs(N.x), 4.0), wz = pow(abs(N.z), 4.0);
+  float ws = wx + wz + 1e-4; wx /= ws; wz /= ws;
+  vec3 aX = texture(tPbrDiff, vec3(uvX, L)).rgb, aZ = texture(tPbrDiff, vec3(uvZ, L)).rgb;
+  vec3 mX = texture(tPbrArm, vec3(uvX, L)).rgb, mZ = texture(tPbrArm, vec3(uvZ, L)).rgb;
+  vec3 tX = texture(tPbrNor, vec3(uvX, L)).rgb * 2.0 - 1.0, tZ = texture(tPbrNor, vec3(uvZ, L)).rgb * 2.0 - 1.0;
+  PbrS s;
+  s.rel = clamp(mix(aZ, aX, wx) / M, 0.15, 3.0);
+  vec3 arm = mix(mZ, mX, wx);
+  s.ao = arm.r;
+  s.rough = arm.g / R;
+  vec3 nX = vec3(N.x, N.y + tX.y * nStr, N.z + tX.x * nStr);
+  vec3 nZ = vec3(N.x + tZ.x * nStr, N.y + tZ.y * nStr, N.z);
+  s.n = normalize(mix(nZ, nX, wx));
+  return s;
+}
 `
 
 const GROUND_FRAG = /* glsl */ `
@@ -66,6 +114,25 @@ const GROUND_FRAG = /* glsl */ `
   rock = mix(rock, vec3(0.13, 0.022, 0.02), smoothstep(0.80, 0.94, nLarge + strata * 0.08) * (0.25 + 0.75 * steep));
   float ash = smoothstep(0.45, 0.75, fbm4(P * 0.045 + 21.0)) * smoothstep(0.5, 0.08, slope);
   rock = mix(rock, vec3(0.105, 0.098, 0.100) * (0.7 + 0.6 * nMid), ash * 0.75);
+
+  // --- PBR detail layers (Ultra): real fissure / strata / ash structure over the procedural palette ---
+  vec3 pbrMod = vec3(1.0); float pbrAO = 1.0; float pbrRoughRel = 1.0; float pf = 0.0;
+  tPbrW = 0.0; tPbrN = N;
+  if (uPbrMix > 0.001) {
+    pf = uPbrMix * (1.0 - smoothstep(55.0, 185.0, camD));
+    float bm = (1.0 - smoothstep(uWaterMin + 0.4, uWaterMin + 6.5, vWPos.y)) * (1.0 - smoothstep(34.0, 58.0, rb));
+    float steepW = smoothstep(0.30, 0.62, slope);
+    float ashW = clamp(max(ash, bm), 0.0, 1.0);
+    float q1 = steepW, q0 = (1.0 - steepW) * (1.0 - ashW), q2 = (1.0 - steepW) * ashW;
+    PbrS a = pbrTop(0.0, P, N, PBR_M0, PBR_R0, 3.2, 1.7);
+    PbrS b = pbrTop(2.0, P, N, PBR_M2, PBR_R2, 2.8, 1.3);
+    PbrS c = pbrWall(1.0, vWPos, N, PBR_M1, PBR_R1, 3.8, 1.7);
+    vec3 rel = a.rel * q0 + b.rel * q2 + c.rel * q1;
+    pbrMod = mix(vec3(1.0), pow(rel, vec3(1.4)), 0.95 * pf);
+    pbrAO = mix(1.0, pow(a.ao * q0 + b.ao * q2 + c.ao * q1, 2.2), pf);
+    pbrRoughRel = a.rough * q0 + b.rough * q2 + c.rough * q1;
+    tPbrN = normalize(a.n * q0 + b.n * q2 + c.n * q1);
+  }
   vec3 col = rock * mix(0.35, 1.0, 1.0 - crack);
 
   // --- Basin hardpan: dark cracked mud with pale mineral crust on the polygon rims (VP-VIS-017/031) ---
@@ -77,6 +144,7 @@ const GROUND_FRAG = /* glsl */ `
   crack *= 1.0 - basinMask;
   float wet = smoothstep(0.08, 0.5, uVit) * (1.0 - smoothstep(uWaterY, uWaterY + 3.2, vWPos.y)) * (1.0 - smoothstep(30.0, 58.0, rb));
   col *= 1.0 - 0.6 * wet;
+  col *= pbrMod * pbrAO;
 
   // --- Succession (Frontier / Living tile atlases VP-VIS-042..044, life-spread timeline VP-VIS-005) ---
   float flatOk = smoothstep(0.62, 0.14, slope);
@@ -126,8 +194,18 @@ const GROUND_FRAG = /* glsl */ `
   tRough = mix(0.88, 0.46, glass);
   tRough = mix(tRough, 0.96, cover);
   tRough = mix(tRough, 0.4, wet * (1.0 - moss));
+  tRough = mix(tRough, clamp(tRough * pbrRoughRel, 0.2, 1.0), pf * (1.0 - cover));
+  tPbrW = pf * (1.0 - 0.65 * cover);
   tBump = smoothstep(0.0, 0.22, edgeA) * 0.9 + vn(Pc * 1.7) * 0.35 * mid + vn(Pc * 5.3) * 0.2 * fine - (1.0 - smoothstep(0.0, 0.07, edgeB)) * 0.3 * fine;
   tBump *= mix(1.0, 0.45, max(soilW, moss));
+  tBump *= mix(1.0, 0.5, pf);
+  if (uPbrDbg > 0.5) {
+    tEmis = vec3(0.0);
+    if (uPbrDbg < 1.5) col = 0.35 * pbrMod;
+    else if (uPbrDbg < 2.5) col = tPbrN * 0.5 + 0.5;
+    else if (uPbrDbg < 3.5) col = vec3(0.6 * pbrAO);
+    else col = vec3(0.4 * pbrRoughRel);
+  }
   diffuseColor.rgb = col;
 }
 `
@@ -174,6 +252,7 @@ export function createTerrain(hf: HeightField, physics: Physics): THREE.Mesh {
     Object.assign(shader.uniforms, {
       uTime: U.uTime, uVit: U.uVit, uAct: U.uAct, uPulse: U.uPulse, uWaterY: U.uWaterY, uWaterMin: U.uWaterMin, uBasin: U.uBasin, uCore: U.uCore,
       uCrystal: U.uCrystal, uRidge: U.uRidge,
+      uPbrMix: PBR.mix, uPbrDbg: PBR.dbg, tPbrDiff: PBR.diff, tPbrNor: PBR.nor, tPbrArm: PBR.arm,
     })
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
@@ -185,15 +264,20 @@ export function createTerrain(hf: HeightField, physics: Physics): THREE.Mesh {
 uniform float uTime, uVit, uAct, uPulse, uWaterY, uWaterMin;
 uniform vec2 uBasin, uCore, uCrystal, uRidge;
 varying vec3 vWPos; varying vec3 vWNrm;
-float tRough; vec3 tEmis; float tBump;
+float tRough; vec3 tEmis; float tBump; vec3 tPbrN; float tPbrW;
 ${NOISE}
-${VORONOI}`,
+${VORONOI}
+${PBR_GLSL}`,
       )
       .replace('#include <color_fragment>', `#include <color_fragment>\n${GROUND_FRAG}`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = tRough;')
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
+if (tPbrW > 0.001) {
+  vec3 nvPbr = normalize((viewMatrix * vec4(tPbrN, 0.0)).xyz);
+  normal = normalize(mix(normal, nvPbr, tPbrW));
+}
 {
   vec3 dpdx = dFdx(-vViewPosition); vec3 dpdy = dFdy(-vViewPosition);
   float hx = dFdx(tBump); float hy = dFdy(tBump);
@@ -205,7 +289,7 @@ ${VORONOI}`,
       )
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += tEmis;')
   }
-  mat.customProgramCacheKey = () => 'vorkath-terrain-v2'
+  mat.customProgramCacheKey = () => 'vorkath-terrain-v3'
 
   const mesh = new THREE.Mesh(geo, mat)
   mesh.receiveShadow = true

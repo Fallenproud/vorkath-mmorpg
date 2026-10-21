@@ -5,6 +5,8 @@ import { GameLoop } from './engine/loop'
 import { SaveStore, type Settings } from './engine/save'
 import type { Game, Mode } from './game/game'
 import { Ui, type Screen } from './ui/ui'
+import { PerfPanel } from './ui/perfpanel'
+import { BENCH_CONFIGS, BENCH_WAYPOINTS, runBenchmark } from './game/bench'
 
 const SCREEN_FOR_MODE: Record<Mode, Screen> = {
   boot: 'boot', title: 'title', opening: 'cinematic', playing: 'hud', paused: 'pause', teaser: 'teaser',
@@ -177,11 +179,13 @@ async function boot(): Promise<void> {
   loop.start()
   window.setTimeout(() => { lastMode = 'title'; ui.show('title') }, 250)
 
+  const perfPanel = new PerfPanel(g)
   // --- Keyboard handling for states where gameplay input is disabled.
   window.addEventListener('keydown', e => {
     if (e.repeat) return
     const code = e.code
     const mode = g.mode
+    if (code === 'F3') { e.preventDefault(); perfPanel.toggle(); return }
     if (code === 'Tab') e.preventDefault()
     if (code === 'Escape' || code === 'KeyP') {
       if (ui.modal) { ui.back(); e.preventDefault(); return }
@@ -219,7 +223,7 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', () => audio.unlock(), { once: false })
 
   // Test and debug hook.
-  ;(window as unknown as { __vorkath: unknown }).__vorkath = { game: g, ui, input, store, loop }
+  ;(window as unknown as { __vorkath: unknown }).__vorkath = { game: g, ui, input, store, loop, perfPanel, bench: { run: runBenchmark.bind(null, g), configs: BENCH_CONFIGS, waypoints: BENCH_WAYPOINTS } }
 }
 
 boot().catch(err => {

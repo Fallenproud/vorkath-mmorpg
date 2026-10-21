@@ -356,6 +356,13 @@ These are directions under discussion, not commitments.
 
 ---
 
+## Ultra graphics pilot (opt-in)
+
+An experimental high-fidelity tier is available under **Settings -> Graphics -> Ultra**, or per-layer from the **F3** performance panel.
+It adds CC0 PBR rock/ground textures (KTX2, lazy-loaded, 6.4 MB), crystal facet shading and GTAO, and ships with a benchmark harness.
+It is **off by default** and has only been validated in a software renderer so far. Measurements, limits and the staged plan:
+[`docs/pbr/PILOT_REPORT.md`](docs/pbr/PILOT_REPORT.md).
+
 ## Credits and licensing
 
 - **Libraries:** [three.js](https://threejs.org) (MIT), [Rapier](https://rapier.rs) (Apache-2.0)

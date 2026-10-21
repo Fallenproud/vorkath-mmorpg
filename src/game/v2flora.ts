@@ -9,6 +9,7 @@ import type { HeightField } from './heightfield'
 import { POI } from './layout'
 import { triCount, upgradeProp, type PropId, type V2Imports } from './v2assets'
 import { U } from './uniforms'
+import { enhanceCrystal } from './crystalfx'
 /**
  * Ecology-weighted placement of the V2 prototype props (WP-03/WP-04).
  *
@@ -164,6 +165,7 @@ function floraMaterial(def: V2Def): THREE.MeshStandardMaterial {
     }
   }
   mat.customProgramCacheKey = () => `v2-${def.id}`
+  if (def.id === 'outcrop') enhanceCrystal(mat, 'outcrop', 0.9)
   return mat
 }
 interface Chunk {

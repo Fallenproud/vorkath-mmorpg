@@ -35,6 +35,8 @@ import { buildScannables, pickTarget, type ReadCtx, type Scannable } from './sca
 import { Lighting, SkyDome, buildEnvironment } from './sky'
 import { advance, defaultProgress, has, nodeCount, objectiveFor, STAGES, type Objective, type Progress, type Stage } from './state'
 import { createTerrain } from './terrain'
+import { PBR, PBR_STATS, ensurePbrLoaded } from './pbr'
+import { estimateSceneMemory } from '../engine/perf'
 import { U } from './uniforms'
 import { Veins } from './veins'
 import { Water } from './water'
@@ -105,13 +107,14 @@ interface Ripple {
   flat: boolean
 }
 
-const QUALITY_LEVEL: Record<string, number> = { low: 0, medium: 1, high: 2 }
+const QUALITY_LEVEL: Record<string, number> = { low: 0, medium: 1, high: 2, ultra: 2 }
 const stageIndex = (s: Stage) => (STAGES as readonly Stage[]).indexOf(s)
 
 const QUALITY_DENSITY = {
   low: { flora: 0.4, atmo: 0.4 },
   medium: { flora: 0.7, atmo: 0.7 },
   high: { flora: 1, atmo: 1 },
+  ultra: { flora: 1, atmo: 1 },
 } as const
 
 export class Game {
@@ -140,7 +143,7 @@ export class Game {
   private biota!: Biota
   private creatures!: Creatures
   private atmosphere!: Atmosphere
-  private explorer!: Explorer
+  explorer!: Explorer
   private readonly orbit = new OrbitScene()
   private cine!: Cinematics
   private scannables: Scannable[] = []
@@ -152,6 +155,8 @@ export class Game {
   readonly ecoLog: { t: number; id: number; accepted: boolean; reason: string; from: number; to: number }[] = []
   ecoRestored = false
   private ecoClock = 0
+  /** A/B override for the PBR terrain layers (null = follow the quality tier). */
+  pbrOverride: boolean | null = null
   readonly perf = { frames: 0, avg: 0, p95: 0, max: 0, samples: [] as number[] }
   private readonly ripples: Ripple[] = []
   private readonly spawn = new THREE.Vector3()
@@ -189,10 +194,10 @@ export class Game {
   private lastObjectiveTitle = ''
 
   constructor(
-    private readonly renderer: Renderer,
+    readonly renderer: Renderer,
     private readonly input: Input,
     private readonly audio: AudioEngine,
-    private readonly store: SaveStore,
+    readonly store: SaveStore,
     private readonly events: GameEvents,
   ) {
     this.hud = {
@@ -1266,7 +1271,14 @@ export class Game {
   // ---- visuals ------------------------------------------------------------------------------
   private ventPhaseBefore = false
 
+  private updatePbr(dt: number): void {
+    const want = this.pbrOverride ?? this.renderer.pbrEnabled
+    if (want && PBR_STATS.state === 'off') void ensurePbrLoaded(this.renderer.gl)
+    const target = want && PBR_STATS.state === 'ready' ? 1 : 0
+    PBR.mix.value += clamp(target - PBR.mix.value, -dt * 1.5, dt * 1.5)
+  }
   private updateVisuals(dt: number): void {
+    this.updatePbr(dt)
     const playing = this.mode === 'playing' || this.mode === 'paused' || this.mode === 'title' || this.mode === 'opening'
     const P = this.progress
     if (this.mode !== 'teaser') {
@@ -1417,7 +1429,16 @@ export class Game {
       drawCalls: info.render.calls, triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures,
       v2Instances: v2?.stats.instances ?? 0, v2Chunks: v2?.stats.chunks ?? 0, v2ChunksHi: v2?.visibleHi ?? 0, v2ChunksLo: v2?.visibleLo ?? 0,
       quality: this.store.data.settings.quality,
+      pbr: { ...PBR_STATS, mix: +PBR.mix.value.toFixed(2) }, gtao: this.renderer.gtaoEnabled,
+      probe: this.renderer.probe.summary(), buffer: this.renderer.bufferInfo(),
     }
+  }
+  debugPbrView(n: number): void {
+    PBR.dbg.value = n
+  }
+  /** Scene memory estimate (textures, geometry); walks the scene, so call on demand only. */
+  memoryEstimate(): ReturnType<typeof estimateSceneMemory> {
+    return estimateSceneMemory(this.scene)
   }
   /** Test hook: jump the ecological state machine to a state and (optionally) settle the world to it instantly. */
   debugSetEco(stage: 0 | 1 | 2 | 3, instant = true): void {

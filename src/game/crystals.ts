@@ -4,6 +4,7 @@ import { mulberry32 } from '../engine/noise'
 import type { HeightField } from './heightfield'
 import { POI, SCARS } from './layout'
 import { U } from './uniforms'
+import { PBR } from './pbr'
 
 /**
  * Obsidian-glass crystal spires: NEW procedural asset (no mesh existed in the reference pack).
@@ -54,6 +55,33 @@ function spireGeometry(seed: number): THREE.BufferGeometry {
   return geo
 }
 
+/** Triplanar PBR micro-structure (dark_rock_02 layer): weathering normals, pit roughness and crevice AO on the obsidian. */
+const SPIRE_COLOR = /* glsl */ `#include <color_fragment>
+float spF = uPbrMix * (1.0 - smoothstep(22.0, 85.0, length(vViewPosition)));
+vec3 spNw = vec3(0.0, 1.0, 0.0);
+float spAO = 1.0;
+float spRg = 0.0;
+if (spF > 0.002) {
+  vec3 gn = normalize(cross(dFdx(vSpW), dFdy(vSpW)));
+  vec3 wt = pow(abs(gn), vec3(4.0)); wt /= (wt.x + wt.y + wt.z + 1e-4);
+  vec2 uvX = vec2(vSpW.z, -vSpW.y) / 1.7, uvY = vec2(vSpW.x, vSpW.z) / 1.7, uvZ = vec2(vSpW.x, -vSpW.y) / 1.7;
+  vec3 tX = texture(tPbrNor, vec3(uvX, 1.0)).rgb * 2.0 - 1.0;
+  vec3 tY = texture(tPbrNor, vec3(uvY, 1.0)).rgb * 2.0 - 1.0;
+  vec3 tZ = texture(tPbrNor, vec3(uvZ, 1.0)).rgb * 2.0 - 1.0;
+  vec3 aX = texture(tPbrArm, vec3(uvX, 1.0)).rgb, aY = texture(tPbrArm, vec3(uvY, 1.0)).rgb, aZ = texture(tPbrArm, vec3(uvZ, 1.0)).rgb;
+  vec3 nX = vec3(gn.x, gn.y + tX.y * 0.8, gn.z + tX.x * 0.8);
+  vec3 nY = vec3(gn.x + tY.x * 0.8, gn.y, gn.z - tY.y * 0.8);
+  vec3 nZ = vec3(gn.x + tZ.x * 0.8, gn.y + tZ.y * 0.8, gn.z);
+  vec3 fq = floor(gn * 40.0 + 0.5) + 31.7 + vSeed * 17.0;
+  float ff = fract(sin(dot(fq, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  vec3 ftilt = vec3(fract(ff * 7.31), fract(ff * 13.7), fract(ff * 3.17)) - 0.5;
+  spNw = normalize(nX * wt.x + nY * wt.y + nZ * wt.z + ftilt * 0.2);
+  vec3 arm = aX * wt.x + aY * wt.y + aZ * wt.z;
+  spAO = pow(arm.r, 2.0);
+  spRg = arm.g - 0.82;
+}
+diffuseColor.rgb *= mix(1.0, spAO, spF);`
+
 function spireMaterial(): THREE.MeshPhysicalMaterial {
   const m = new THREE.MeshPhysicalMaterial({
     color: '#0b0709', roughness: 0.14, metalness: 0.0, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 0.9, flatShading: true,
@@ -61,11 +89,18 @@ function spireMaterial(): THREE.MeshPhysicalMaterial {
   m.onBeforeCompile = shader => {
     shader.uniforms.uTime = U.uTime
     shader.uniforms.uAct = U.uAct
+    shader.uniforms.uPbrMix = PBR.mix
+    shader.uniforms.tPbrNor = PBR.nor
+    shader.uniforms.tPbrArm = PBR.arm
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aH;\nvarying float vH;\nvarying float vSeed;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = aH;\n#ifdef USE_INSTANCING\nvSeed = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);\n#else\nvSeed = 0.5;\n#endif')
+      .replace('#include <common>', '#include <common>\nattribute float aH;\nvarying float vH;\nvarying float vSeed;\nvarying vec3 vSpW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvec4 spW4 = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nspW4 = instanceMatrix * spW4;\n#endif\nvSpW = (modelMatrix * spW4).xyz;\nvH = aH;\n#ifdef USE_INSTANCING\nvSeed = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);\n#else\nvSeed = 0.5;\n#endif')
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAct;\nvarying float vH;\nvarying float vSeed;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAct;\nvarying float vH;\nvarying float vSeed;\nvarying vec3 vSpW;\nuniform float uPbrMix;\nuniform highp sampler2DArray tPbrNor;\nuniform highp sampler2DArray tPbrArm;')
+      .replace('#include <color_fragment>', SPIRE_COLOR)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + spRg * 1.1 * spF, 0.07, 0.7);')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 nvS = normalize((viewMatrix * vec4(spNw, 0.0)).xyz);\nif (spF > 0.002) { normal = normalize(mix(normal, nvS, spF * 0.8)); }')
+      .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (spF > 0.002) { clearcoatNormal = normalize(mix(clearcoatNormal, nvS, spF * 0.85)); }\n#endif')
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
@@ -79,7 +114,7 @@ function spireMaterial(): THREE.MeshPhysicalMaterial {
 }`,
       )
   }
-  m.customProgramCacheKey = () => 'vorkath-spire-v1'
+  m.customProgramCacheKey = () => 'vorkath-spire-v3'
   return m
 }
 

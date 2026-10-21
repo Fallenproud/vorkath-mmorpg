@@ -401,7 +401,7 @@ ${check('muted', 'Mute all sound', s.muted)}
 ${slider('sensitivity', 'Mouse sensitivity', 0.3, 2.5, 0.05, s.sensitivity, `${Math.round(s.sensitivity * 100)}%`)}
 ${check('invertY', 'Invert vertical look', s.invertY)}
 ${slider('fov', 'Field of view', 50, 90, 1, s.fov, String(s.fov))}
-<div class="setting"><span>Graphics quality</span><div class="segs">${q('low', 'Low')}${q('medium', 'Medium')}${q('high', 'High')}</div></div>
+<div class="setting"><span>Graphics quality</span><div class="segs">${q('low', 'Low')}${q('medium', 'Medium')}${q('high', 'High')}${q('ultra', 'Ultra (pilot)')}</div></div>
 ${check('reducedMotion', 'Reduced motion (less camera shake)', s.reducedMotion)}
 ${check('hints', 'Show on-screen key hints', s.hints)}
 </div></div>

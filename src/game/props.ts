@@ -5,6 +5,7 @@ import type { HeightField } from './heightfield'
 import { POI, SCARS } from './layout'
 import { glowSprite, instanced, type Placement } from './gfx'
 import { U } from './uniforms'
+import { enhanceCrystal } from './crystalfx'
 
 export interface Model {
   geometry: THREE.BufferGeometry
@@ -366,6 +367,7 @@ export class Props {
     }
     const placements: Placement[] = items.map(it => ({ x: it.x, y: hf.heightAt(it.x, it.z) - 0.15, z: it.z, scale: it.s, rotY: it.rot, tiltX: (rnd() - 0.5) * 0.12, tiltZ: (rnd() - 0.5) * 0.12 }))
     if (models.crystal) {
+      enhanceCrystal(models.crystal.material, 'hero', 0.8)
       const mesh = instanced(models.crystal.geometry, models.crystal.material, placements.map(p => ({ ...p, scale: (p.scale as number) / models.crystal!.height })))
       this.group.add(mesh)
     } else {
@@ -392,7 +394,9 @@ export class Props {
       const s = 0.4 + rnd() * 1.2
       spikes.push({ x: p.x, y: hf.heightAt(p.x, p.z) - 0.1, z: p.z, scale: s, rotY: rnd() * 6, tiltX: (rnd() - 0.5) * 0.7, tiltZ: (rnd() - 0.5) * 0.7, color: new THREE.Color().setHSL(0.005 + rnd() * 0.02, 0.6, 0.1 + rnd() * 0.1) })
     }
-    this.group.add(instanced(spike, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.22, metalness: 0.55, emissive: '#180404' }), spikes))
+    const spikeMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.22, metalness: 0.55, emissive: '#180404' })
+    enhanceCrystal(spikeMat, 'spike', 0.6)
+    this.group.add(instanced(spike, spikeMat, spikes))
 
     // Resonance shards: three safe, two just inside a vent's danger ring.
     const shardDefs: [number, number][] = [[24, 15.5], [105, 19.5], [195, 12], [288, 21], [150, 7]]
