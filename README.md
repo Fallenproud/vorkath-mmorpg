@@ -54,6 +54,7 @@ Scan the terrain, collect resonance shards, stabilize the Life-Core, and then wa
 | **Cinematics** | Skippable planet-to-surface opening, a replayable teaser, and a 52-second **Before / After Film**, all rendered by the live game scene |
 | **Presentation** | Main menu (New Game / Continue), pause menu, settings (audio, sensitivity, FOV, quality tier, reduced motion), full in-game help; fully procedural audio |
 | **Persistence** | Progress, discoveries, ecology tiles and position saved locally (`localStorage`) and restored on Continue |
+| **Accounts and AI** | Optional sign-in with cross-device cloud save, conflict protection, run records, and an AI Field Analyst grounded in the player's own scans (see [Accounts, cloud save and AI](#accounts-cloud-save-and-ai-optional-backend)) |
 
 ## The world
 
@@ -160,7 +161,7 @@ To choose another host or port: `HOST=0.0.0.0 PORT=8080 pnpm dev:local`.
 
 ## Deployment and hosting
 
-The game is a **fully static site**: HTML, JavaScript, fonts and `.glb` models. There is no server code, no database and no API, so any static host will do.
+The game client is a **fully static site**: HTML, JavaScript, fonts and `.glb` models, so any static host will do, and it is fully playable that way (progress stays in the browser). The optional account, cloud-save and AI features need the small backend in `server/`; see [Accounts, cloud save and AI](#accounts-cloud-save-and-ai-optional-backend). Without that backend the game detects it and shows an offline-mode notice (verified on a plain static file server).
 
 ### 1. Build
 
@@ -279,6 +280,29 @@ Commit to `main`, let CI pass, then re-run the Pages workflow (or let your host 
 
 ---
 
+## Accounts, cloud save and AI (optional backend)
+
+Players can sign in to keep their profile, progress and run records across devices, and to use the **AI Field Analyst**. Guests lose nothing: the whole game still works with local saves only.
+
+| Feature | Summary |
+|---|---|
+| Sign-in | Manus OAuth, session in an HTTP-only cookie. Status chip on the main menu |
+| Cloud save | Progress and portable settings sync automatically. Graphics quality stays per device |
+| Conflict protection | A device can never silently overwrite newer progress; the player chooses **Use account save** or **Keep this device** |
+| Records | Per-run milestones (Life-Core stabilized, Thriving, Survey completed) and personal bests |
+| Privacy | Sign out keeps the local save; **Delete my cloud data** removes the account copy |
+| AI Field Analyst (**N**) | Answers only from what the explorer has scanned, labelled AI-generated and not canon; can write a stored field report. Server-side model call, 60 calls per player per day |
+
+Run it locally (needs the platform environment variables listed in the guide):
+
+```bash
+npm --prefix server install
+PORT=3001 node server/index.mjs     # API
+PORT=3000 pnpm dev                  # game, Vite proxies /api to the API
+```
+
+Full design, API, hosting, test evidence and limits: **[docs/ACCOUNTS_AND_AI.md](docs/ACCOUNTS_AND_AI.md)**. Tested with `node server/test/api.test.mjs` (45 checks) and `node scripts/e2e/cloud_e2e.mjs` (41 checks, real browser, real database, live model). The interactive Manus login screen itself was not exercised by automated tests.
+
 ## Architecture
 
 ```
@@ -337,7 +361,7 @@ Full reports with every check, the GLB import findings and honest limitations:
 
 ## Known limitations
 
-- One compact region, not an open world. **No multiplayer.**
+- One compact region, not an open world. **No multiplayer.** Accounts sync a single save slot per player.
 - The higher-detail rocks, plants and trees are **procedural upgrades of low-poly blockouts**: they have no texture maps, and the overall look is stylized and faceted. The explorer is built from articulated parts, not a skinned, rigged model.
 - Real-GPU performance, mobile browsers, Safari and gamepad behaviour are untested.
 - No touch controls. Mouse look needs pointer lock or right-drag.

@@ -1,0 +1,166 @@
+[
+ [
+  "guest: account chip invites sign-in",
+  true
+ ],
+ [
+  "guest: account panel shows the benefits and a Sign in button",
+  true
+ ],
+ [
+  "guest: local save works with no server involvement",
+  true
+ ],
+ [
+  "guest: change is remembered as unsynced",
+  true
+ ],
+ [
+  "signed in: chip shows the name and Synced",
+  true
+ ],
+ [
+  "first local save uploads automatically (revision 1, 3 discoveries)",
+  true
+ ],
+ [
+  "reload with identical data does not push again",
+  true
+ ],
+ [
+  "continue button shows the saved progress after reload",
+  true
+ ],
+ [
+  "second device: cloud save is loaded onto an empty device",
+  true
+ ],
+ [
+  "second device: player is told, and tracking revision 1",
+  true
+ ],
+ [
+  "second device: can continue playing the pulled save",
+  true
+ ],
+ [
+  "second device: progress made while playing syncs (revision 2)",
+  true
+ ],
+ [
+  "stale device mid-game: push is refused, cloud untouched, conflict raised",
+  true
+ ],
+ [
+  "stale device mid-game: player gets a toast and the game keeps running",
+  true
+ ],
+ [
+  "first device: newer cloud progress is taken automatically when nothing local changed",
+  true
+ ],
+ [
+  "conflict: both versions are shown side by side and nothing is overwritten",
+  true
+ ],
+ [
+  "conflict: sync stays paused while undecided",
+  true
+ ],
+ [
+  "conflict: \"Use account save\" replaces the device save and leaves the cloud as is",
+  true
+ ],
+ [
+  "conflict: \"Keep this device\" overwrites the cloud (8 discoveries, revision 6)",
+  true
+ ],
+ [
+  "offline: shows a friendly retrying state and keeps the data",
+  true
+ ],
+ [
+  "offline: reconnecting uploads the pending changes",
+  true
+ ],
+ [
+  "account panel lists run records and personal bests",
+  true
+ ],
+ [
+  "display name can be changed and shows in the chip",
+  true
+ ],
+ [
+  "N pauses the game and opens the Field Analyst",
+  true
+ ],
+ [
+  "analyst panel carries the AI-generated label and the non-canon notice",
+  true
+ ],
+ [
+  "typing shortcut letters and spaces goes into the box (no help/pause/journal side effects)",
+  true
+ ],
+ [
+  "analyst error: friendly message, question kept in the box, retry offered",
+  true
+ ],
+ [
+  "analyst loading: shows \"analysing\" immediately and disables Ask while pending",
+  true
+ ],
+ [
+  "analyst answers after retry (live model)",
+  true
+ ],
+ [
+  "analyst: input cleared after a successful question",
+  true
+ ],
+ [
+  "field report is generated and displayed",
+  true
+ ],
+ [
+  "Escape closes the analyst and returns to the pause menu",
+  true
+ ],
+ [
+  "saved field report appears under Account",
+  true
+ ],
+ [
+  "sign out: back to guest, local progress kept",
+  true
+ ],
+ [
+  "sign out: server rejects further cloud access (session cleared)",
+  true
+ ],
+ [
+  "account B starts empty and does not receive account A progress",
+  true
+ ],
+ [
+  "delete my cloud data: removed from the server",
+  true
+ ],
+ [
+  "delete: local progress stays and syncing is paused",
+  true
+ ],
+ [
+  "delete: further play does not re-upload while paused",
+  true
+ ],
+ [
+  "Sync now re-enables cloud save and uploads again",
+  true
+ ],
+ [
+  "no uncaught page errors during the run",
+  true
+ ]
+]

@@ -57,8 +57,12 @@ export function parseSave(text: string | null): SaveData {
 }
 
 /** Small wrapper over localStorage that never throws (private windows, quota, disabled storage). */
+export type SaveChange = 'progress' | 'settings' | 'cleared'
+
 export class SaveStore {
   data: SaveData = defaultSave()
+  /** Called after every local write (not for cloud-applied writes). Used by the optional cloud sync. */
+  onChange: ((kind: SaveChange) => void) | null = null
   constructor(private readonly storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null = safeStorage()) {
     this.data = parseSave(this.read())
   }
@@ -70,13 +74,24 @@ export class SaveStore {
   }
   get settings(): Settings { return this.data.settings }
   get progress(): Progress | null { return this.data.progress }
-  saveSettings(): void { this.write() }
+  saveSettings(): void {
+    this.write()
+    this.onChange?.('settings')
+  }
   saveProgress(p: Progress): void {
     this.data.progress = structuredClone(p)
     this.write()
+    this.onChange?.('progress')
   }
   clearProgress(): void {
     this.data.progress = null
+    this.write()
+    this.onChange?.('cleared')
+  }
+  /** Applies a save that came from the cloud. Does not notify onChange, so it is not pushed straight back. */
+  applyCloud(progress: Progress | null, settings?: Partial<Settings> | null): void {
+    if (progress) this.data.progress = structuredClone(progress)
+    if (settings) this.data.settings = parseSettings({ ...this.data.settings, ...settings, quality: this.data.settings.quality })
     this.write()
   }
   hasProgress(): boolean { return this.data.progress !== null }

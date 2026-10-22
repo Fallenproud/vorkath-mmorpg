@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/manus-game-assets/restore.mjs && vite",
+    "dev:api": "PORT=${API_PORT:-3001} node server/index.mjs",
     "build": "node scripts/manus-game-assets/restore.mjs && node scripts/manus-game-sharing/build.mjs",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
@@ -17,7 +18,9 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "@trpc/client": "^11.6.0",
+    "superjson": "^1.13.3"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",

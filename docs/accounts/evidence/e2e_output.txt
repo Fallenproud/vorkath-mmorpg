@@ -1,0 +1,44 @@
+PASS  guest: account chip invites sign-in  -> Sign in to sync Guest
+PASS  guest: account panel shows the benefits and a Sign in button
+PASS  guest: local save works with no server involvement
+PASS  guest: change is remembered as unsynced  -> {"uid":null,"rev":0,"dirty":true,"off":false}
+PASS  signed in: chip shows the name and Synced  -> Ada Synced
+PASS  first local save uploads automatically (revision 1, 3 discoveries)  -> {"revision":1,"discoveries":3,"play_time":130,"run_id":"r_mviw1niwq7yclx"}
+PASS  reload with identical data does not push again
+PASS  continue button shows the saved progress after reload
+PASS  second device: cloud save is loaded onto an empty device
+PASS  second device: player is told, and tracking revision 1
+PASS  second device: can continue playing the pulled save
+PASS  second device: progress made while playing syncs (revision 2)  -> {"revision":2,"discoveries":4,"play_time":130,"run_id":"r_mviw1niwq7yclx"}
+PASS  stale device mid-game: push is refused, cloud untouched, conflict raised  -> {"revision":3,"discoveries":5,"play_time":130,"run_id":"r_mviw1niwq7yclx"}
+PASS  stale device mid-game: player gets a toast and the game keeps running
+PASS  first device: newer cloud progress is taken automatically when nothing local changed
+PASS  conflict: both versions are shown side by side and nothing is overwritten
+PASS  conflict: sync stays paused while undecided
+PASS  conflict: "Use account save" replaces the device save and leaves the cloud as is
+PASS  conflict: "Keep this device" overwrites the cloud (8 discoveries, revision 6)  -> {"revision":6,"discoveries":8,"play_time":400,"run_id":"r_mviw1niwq7yclx"}
+PASS  offline: shows a friendly retrying state and keeps the data  -> Ada Offline, will retry
+PASS  offline: reconnecting uploads the pending changes  -> {"revision":7,"discoveries":9,"play_time":420,"run_id":"r_mviw1niwq7yclx"}
+PASS  account panel lists run records and personal bests
+PASS  display name can be changed and shows in the chip
+PASS  N pauses the game and opens the Field Analyst
+PASS  analyst panel carries the AI-generated label and the non-canon notice
+PASS  typing shortcut letters and spaces goes into the box (no help/pause/journal side effects)  -> hpjn what is this ridge made of
+PASS  analyst error: friendly message, question kept in the box, retry offered  -> You appear to be offline. Your progress is safe on this device. Try again
+PASS  analyst loading: shows "analysing" immediately and disables Ask while pending
+PASS  analyst answers after retry (live model)  -> ANALYST I can only help with the survey of The Scarred Frontier; try asking about regional features or current objectives.
+PASS  analyst: input cleared after a successful question
+PASS  field report is generated and displayed  -> FIELD REPORT - AI-GENERATED Crystal Formation Field Survey The explorer arrived at the Crystal Formation Field to find 
+PASS  Escape closes the analyst and returns to the pause menu
+PASS  saved field report appears under Account
+PASS  sign out: back to guest, local progress kept
+PASS  sign out: server rejects further cloud access (session cleared)
+PASS  account B starts empty and does not receive account A progress
+PASS  delete my cloud data: removed from the server
+PASS  delete: local progress stays and syncing is paused
+PASS  delete: further play does not re-upload while paused
+PASS  Sync now re-enables cloud save and uploads again  -> {"revision":1,"discoveries":5,"play_time":150,"run_id":"r_mviw8oixkmpauv"}
+cleanup: test users remaining = 0
+PASS  no uncaught page errors during the run
+
+41/41 checks passed

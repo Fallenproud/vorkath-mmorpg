@@ -3,6 +3,7 @@ import { AudioEngine } from './engine/audio'
 import { Input } from './engine/input'
 import { GameLoop } from './engine/loop'
 import { SaveStore, type Settings } from './engine/save'
+import { CloudSync } from './engine/cloud'
 import type { Game, Mode } from './game/game'
 import { Ui, type Screen } from './ui/ui'
 import { PerfPanel } from './ui/perfpanel'
@@ -28,6 +29,7 @@ async function boot(): Promise<void> {
   const input = new Input(canvas)
   const audio = new AudioEngine()
   let game: Game | undefined
+  let cloud: CloudSync | undefined
   let recorder: MediaRecorder | null = null
   let lockLostAt = 0
 
@@ -38,6 +40,7 @@ async function boot(): Promise<void> {
     if (game?.mode !== 'playing') return
     game.pause()
     input.unlockPointer()
+    void cloud?.flush()
   }
   const resumeGame = () => {
     if (game?.mode !== 'paused') return
@@ -52,7 +55,7 @@ async function boot(): Promise<void> {
     teaser: () => { audio.unlock(); game?.startTeaser('teaser') },
     transform: () => { audio.unlock(); game?.startTeaser('transform') },
     resume: resumeGame,
-    quit: () => { input.unlockPointer(); game?.toTitle() },
+    quit: () => { input.unlockPointer(); game?.toTitle(); void cloud?.flush() },
     skip: () => game?.skipCinematic(),
     settings: patch => {
       Object.assign(store.data.settings, patch)
@@ -122,6 +125,7 @@ async function boot(): Promise<void> {
         g.pause()
         input.unlockPointer()
         ui.showComplete()
+        void cloud?.flush()
       }, 2200)
     },
     pauseKey: pauseGame,
@@ -140,6 +144,16 @@ async function boot(): Promise<void> {
   })
   game = g
   ui.attach(g)
+  cloud = new CloudSync(store, {
+    atTitle: () => g.mode === 'title',
+    applied: () => { ui.refreshTitle(); g.applySettings(store.data.settings as Settings) },
+    notify: (text, kind) => { if (g.mode === 'title') ui.titleNote(text); else ui.toast(text, kind ?? 'info') },
+    conflict: () => {
+      if (g.mode === 'title') ui.showConflict()
+      else ui.toast('Your account has different progress than this device. Open Pause > Account to choose which to keep.', 'warn')
+    },
+  })
+  ui.attachCloud(cloud)
   g.reducedMotion = store.data.settings.reducedMotion
   ui.setBoot(0.4, 'Building the Scarred Frontier...')
   await g.init(assets)
@@ -174,6 +188,7 @@ async function boot(): Promise<void> {
   })
 
   g.enterTitle()
+  void cloud.init()
   g.hud.black = 0
   ui.setBoot(1, 'Ready')
   loop.start()
@@ -185,6 +200,9 @@ async function boot(): Promise<void> {
     if (e.repeat) return
     const code = e.code
     const mode = g.mode
+    // Typing in a text box must never trigger game shortcuts (H, P, J, N...). Only Escape still closes the panel.
+    const tgt = e.target as HTMLElement | null
+    if (tgt && (tgt instanceof HTMLTextAreaElement || (tgt instanceof HTMLInputElement && tgt.type === 'text')) && code !== 'Escape') return
     if (code === 'F3') { e.preventDefault(); perfPanel.toggle(); return }
     if (code === 'Tab') e.preventDefault()
     if (code === 'Escape' || code === 'KeyP') {
@@ -197,6 +215,10 @@ async function boot(): Promise<void> {
       g.skipCinematic()
     } else if ((code === 'KeyJ' || code === 'Tab') && g.journalOpen) {
       ui.back()
+    } else if (code === 'KeyN' && (mode === 'playing' || mode === 'paused') && !ui.modal && !g.journalOpen) {
+      e.preventDefault()
+      pauseGame()
+      ui.openAnalyst('pause')
     } else if (code === 'KeyH' && (mode === 'paused' || mode === 'title')) {
       ui.toggleHelp()
     }
@@ -213,6 +235,7 @@ async function boot(): Promise<void> {
     if (document.hidden) {
       pauseGame()
       g.saveNow()
+      void cloud?.flush()
     }
   })
   window.addEventListener('pagehide', () => g.saveNow())
@@ -223,7 +246,7 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', () => audio.unlock(), { once: false })
 
   // Test and debug hook.
-  ;(window as unknown as { __vorkath: unknown }).__vorkath = { game: g, ui, input, store, loop, perfPanel, bench: { run: runBenchmark.bind(null, g), configs: BENCH_CONFIGS, waypoints: BENCH_WAYPOINTS } }
+  ;(window as unknown as { __vorkath: unknown }).__vorkath = { game: g, ui, input, store, cloud, loop, perfPanel, bench: { run: runBenchmark.bind(null, g), configs: BENCH_CONFIGS, waypoints: BENCH_WAYPOINTS } }
 }
 
 boot().catch(err => {

@@ -4,6 +4,9 @@ import { DISCOVERIES, type Category, type Discovery } from '../game/discoveries'
 import type { Game, Hud } from '../game/game'
 import { POI_NAMES } from '../game/layout'
 import { objectiveFor, STAGES } from '../game/state'
+import type { CloudSync, ProfileInfo, RecordsInfo, ReportBody } from '../engine/cloud'
+import { askAnalyst, buildAiContext, requestReport, type ChatTurn } from '../engine/analyst'
+import { accountHtml, analystHtml, chipHtml, conflictHtml, syncLabel, type AccountView, type AnalystView } from './accountpanels'
 
 export interface UiHandlers {
   newGame(): void
@@ -28,7 +31,7 @@ export interface UiHandlers {
 }
 
 export type Screen = 'boot' | 'title' | 'hud' | 'pause' | 'cinematic' | 'teaser'
-type Modal = 'settings' | 'controls' | 'journal' | 'about' | 'confirm' | 'complete' | null
+type Modal = 'settings' | 'controls' | 'journal' | 'about' | 'confirm' | 'complete' | 'account' | 'analyst' | 'conflict' | null
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
 const CATEGORY_ORDER: Category[] = ['Survey', 'Technology', 'Geology', 'Life-Core', 'Hazard', 'Hydrology', 'Biology']
@@ -44,6 +47,7 @@ const CONTROLS: [string, string][] = [
   ['F or Left mouse / RT', 'Hold on a highlighted object to scan it'],
   ['E / X', 'Interact: collect, seat a shard, hold to stabilize'],
   ['J or Tab / Back', 'Open the journal'],
+  ['N', 'Consult the AI Field Analyst (needs an account; pauses the game)'],
   ['V / R3', 'Survey camera (free flight, after you are comfortable)'],
   ['H', 'Show or hide this help'],
   ['Esc or P / Start', 'Pause'],
@@ -76,6 +80,11 @@ export class Ui {
   private tagEls: HTMLElement[] = []
   private compassEls: HTMLElement[] = []
   private game: Game | null = null
+  private cloud: CloudSync | null = null
+  private acct: AccountView = { profile: null, records: null, loading: false, error: '', nameMsg: '' }
+  private an: AnalystView & { from: 'journal' | 'pause' | null; lastQ: string; runId: string } = {
+    turns: [], pending: false, error: '', draft: '', report: null, reportPending: false, reportError: '', ai: null, discoveries: 0, from: null, lastQ: '', runId: '',
+  }
 
   constructor(root: HTMLElement, private readonly store: SaveStore, private readonly audio: AudioEngine, private readonly h: UiHandlers) {
     this.root = root
@@ -115,6 +124,7 @@ export class Ui {
 
 <div id="layerTitle" class="layer title hidden">
   <div class="title-shade"></div>
+  <button id="acctChip" class="acct-chip" data-act="account" aria-label="Account and cloud save"></button>
   <div class="title-wrap">
     <div class="eyebrow">Prototype vertical slice</div>
     <h1 class="logo">VORKATH</h1>
@@ -126,9 +136,11 @@ export class Ui {
       <button data-act="teaser">Watch the Teaser</button>
       <button data-act="transform">Before / After Film</button>
       <button data-act="controls">How to Play</button>
+      <button data-act="account" id="btnAccount">Account and Cloud Save</button>
       <button data-act="settings">Settings</button>
       <button data-act="about">About and Limitations</button>
     </div>
+    <div id="titleNote" class="title-note hidden" role="status"></div>
     <div class="foot muted">All terrain, effects, audio and the explorer are procedural. Five creature, crystal and structure models are AI-generated placeholders. Lore here is a prototype interpretation, not approved canon.</div>
   </div>
 </div>
@@ -181,6 +193,8 @@ export class Ui {
     <div class="menu">
       <button class="primary" data-act="resume">Resume</button>
       <button data-act="journal">Journal</button>
+      <button data-act="analyst">Field Analyst <small>AI, needs an account</small></button>
+      <button data-act="account">Account and cloud save</button>
       <button data-act="controls">Controls</button>
       <button data-act="settings">Settings</button>
       <button data-act="safe">Return to last safe position</button>
@@ -211,8 +225,20 @@ export class Ui {
         this.audio.uiHover()
       }
     })
+    this.root.addEventListener('keydown', e => {
+      const t = e.target as HTMLElement
+      if (t.id === 'aInput' && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        void this.sendQuestion((t as HTMLTextAreaElement).value)
+      } else if (t.id === 'nameInput' && e.key === 'Enter') {
+        e.preventDefault()
+        void this.saveName()
+      }
+    })
     this.root.addEventListener('input', e => {
       const t = e.target as HTMLInputElement
+      // Track what the player is typing so a re-render (or a failed request) never loses it.
+      if (t.id === 'aInput') this.an.draft = t.value
       if (t.dataset.set) this.onSetting(t)
     })
     this.root.addEventListener('change', e => {
@@ -253,6 +279,21 @@ export class Ui {
       case 'about': this.openModal('about'); break
       case 'journal': this.openModal('journal'); break
       case 'close': this.closeModal(); break
+      case 'account': this.openAccount(); break
+      case 'signin': void this.cloud?.login(); break
+      case 'signout': this.askConfirm('Sign out? Your progress stays on this device and in your account.', () => { void this.cloud?.logout().then(() => this.openAccount()) }); break
+      case 'syncnow': void this.cloud?.syncNow().then(() => this.loadAccount()); break
+      case 'savename': void this.saveName(); break
+      case 'deletecloud': this.askConfirm('Delete your cloud save, run records and field reports from your account? Progress stored on your devices is not affected. This cannot be undone.', () => { void this.deleteCloud() }); break
+      case 'showconflict': this.openModal('conflict'); break
+      case 'resolveCloud': void this.cloud?.resolve('cloud').then(() => { if (!this.cloud?.conflict) this.closeModal() }); break
+      case 'resolveDevice': void this.cloud?.resolve('device').then(() => { if (!this.cloud?.conflict) this.closeModal() }); break
+      case 'resolveLater': this.closeModal(); break
+      case 'analyst': this.openAnalyst(this.game?.journalOpen ? 'journal' : 'pause'); break
+      case 'asend': void this.sendQuestion(this.els.modalBody.querySelector<HTMLTextAreaElement>('#aInput')?.value ?? ''); break
+      case 'aq': void this.sendQuestion(el.dataset.q ?? ''); break
+      case 'aretry': void this.sendQuestion(this.an.lastQ); break
+      case 'areport': void this.makeReport(); break
       case 'resume': this.h.resume(); break
       case 'safe': this.h.returnToSafe(); break
       case 'quit': this.h.quit(); break
@@ -330,6 +371,10 @@ export class Ui {
     this.els.modalBody.innerHTML = ''
     if (!silent) this.audio.uiClose()
     if (was === 'journal' && this.game?.journalOpen) this.h.closeJournal()
+    if (was === 'analyst' && this.an.from === 'journal' && this.game?.journalOpen && !silent) {
+      this.an.from = null
+      this.openModal('journal')
+    }
   }
 
   /** Escape/back handling for modal-aware navigation. Returns true if something was closed. */
@@ -361,6 +406,163 @@ export class Ui {
     this.openModal('confirm')
   }
 
+  // ------------------------------------------------------------------------------------------
+  // Account, cloud save and AI Field Analyst
+  // ------------------------------------------------------------------------------------------
+  attachCloud(c: CloudSync): void {
+    this.cloud = c
+    c.onChange(() => this.onCloudChange())
+    this.updateChip()
+  }
+
+  private updateChip(): void {
+    const chip = this.els.acctChip
+    if (!chip || !this.cloud) return
+    chip.innerHTML = chipHtml(this.cloud)
+    chip.dataset.state = syncLabel(this.cloud).tone
+    const btn = this.els.btnAccount
+    if (btn) btn.textContent = this.cloud.user ? 'Account and Cloud Save' : this.cloud.state === 'unavailable' ? 'Account (offline mode)' : 'Sign in and Cloud Save'
+  }
+
+  private onCloudChange(): void {
+    this.updateChip()
+    if (this.modal === 'account' && document.activeElement?.id !== 'nameInput') this.renderModal()
+    else if (this.modal === 'conflict') { if (this.cloud?.conflict) this.renderModal(); else this.closeModal() }
+    else if (this.modal === 'analyst') this.renderAnalyst()
+    if (this.modal === 'account' && this.cloud?.user && !this.acct.profile && !this.acct.loading) void this.loadAccount()
+  }
+
+  /** Short status line on the title screen (toasts live in the HUD layer, which is hidden there). */
+  titleNote(text: string): void {
+    const el = this.els.titleNote
+    if (!el) return
+    el.textContent = text
+    el.classList.remove('hidden')
+    window.clearTimeout(this.noteTimer)
+    this.noteTimer = window.setTimeout(() => el.classList.add('hidden'), 7000)
+  }
+  private noteTimer = 0
+
+  /** Called when a save conflict needs a decision; only interrupts the title screen. */
+  showConflict(): void {
+    if (this.screen === 'title' && !this.modal) this.openModal('conflict')
+  }
+
+  openAccount(): void {
+    this.acct = { ...this.acct, error: '', nameMsg: '' }
+    this.openModal('account')
+    void this.loadAccount()
+  }
+
+  private async loadAccount(): Promise<void> {
+    const c = this.cloud
+    if (!c?.user) return
+    this.acct.loading = true
+    try {
+      const [profile, records] = await Promise.all([c.profile(), c.records()])
+      this.acct = { ...this.acct, profile: profile as ProfileInfo, records: records as RecordsInfo, error: '' }
+    } catch (e) {
+      this.acct.error = e instanceof Error ? e.message : 'Could not load your account.'
+    } finally {
+      this.acct.loading = false
+      if (this.modal === 'account') this.renderModal()
+    }
+  }
+
+  private async saveName(): Promise<void> {
+    const input = this.els.modalBody.querySelector<HTMLInputElement>('#nameInput')
+    if (!this.cloud?.user || !input) return
+    try {
+      const name = await this.cloud.setName(input.value)
+      this.acct.nameMsg = `Saved as "${name}".`
+      this.acct.error = ''
+    } catch (e) {
+      this.acct.error = e instanceof Error ? e.message : 'Could not save the name.'
+    }
+    if (this.modal === 'account') this.renderModal()
+  }
+
+  private async deleteCloud(): Promise<void> {
+    try {
+      await this.cloud?.deleteCloud()
+      this.acct = { profile: null, records: null, loading: false, error: '', nameMsg: '' }
+      this.an.report = null
+    } catch (e) {
+      this.acct.error = e instanceof Error ? e.message : 'Could not delete your cloud data.'
+    }
+    this.openAccount()
+  }
+
+  openAnalyst(from: 'journal' | 'pause'): void {
+    this.an.from = from
+    const runId = this.game?.progress?.runId ?? ''
+    if (runId !== this.an.runId) {
+      // A different run: start a fresh conversation so old answers never describe the new world.
+      this.an = { ...this.an, runId, turns: [], error: '', draft: '', report: null, reportError: '', lastQ: '' }
+    }
+    this.openModal('analyst')
+  }
+
+  private renderAnalyst(): void {
+    if (this.modal !== 'analyst') return
+    const body = this.els.modalBody
+    const prev = body.querySelector<HTMLTextAreaElement>('#aInput')
+    const hadFocus = !!prev && document.activeElement === prev
+    this.an.discoveries = Object.keys(this.game?.progress?.discoveries ?? {}).length
+    body.innerHTML = analystHtml(this.cloud, this.an)
+    body.classList.remove('wide')
+    const log = body.querySelector<HTMLElement>('#aLog')
+    if (log) log.scrollTop = log.scrollHeight
+    const input = body.querySelector<HTMLTextAreaElement>('#aInput')
+    if (input && hadFocus && !this.an.pending) { input.focus(); input.setSelectionRange(input.value.length, input.value.length) }
+  }
+
+  private async sendQuestion(raw: string): Promise<void> {
+    const q = raw.trim()
+    const g = this.game
+    if (this.an.pending || q.length < 2 || !this.cloud?.user || !g?.progress) return
+    const history: ChatTurn[] = this.an.turns.slice(-6)
+    this.an.turns.push({ role: 'user', text: q })
+    this.an.pending = true
+    this.an.error = ''
+    this.an.lastQ = q
+    this.an.draft = ''
+    this.renderAnalyst()
+    try {
+      const res = await askAnalyst(q, history, buildAiContext(g.progress, g.hud.region))
+      this.an.turns.push({ role: 'analyst', text: res.reply })
+      this.an.ai = res.ai
+      if (this.an.turns.length > 24) this.an.turns.splice(0, this.an.turns.length - 24)
+    } catch (e) {
+      // Keep what the player typed so they can retry or edit it.
+      this.an.turns.pop()
+      this.an.draft = q
+      this.an.error = e instanceof Error ? e.message : 'The Analyst could not answer.'
+    } finally {
+      this.an.pending = false
+      this.renderAnalyst()
+    }
+  }
+
+  private async makeReport(): Promise<void> {
+    const g = this.game
+    if (this.an.reportPending || !this.cloud?.user || !g?.progress) return
+    this.an.reportPending = true
+    this.an.reportError = ''
+    this.renderAnalyst()
+    try {
+      const res = await requestReport(g.progress.runId, g.progress.stage, buildAiContext(g.progress, g.hud.region))
+      this.an.report = res.report as ReportBody
+      this.an.ai = res.ai
+      this.acct.records = null
+    } catch (e) {
+      this.an.reportError = e instanceof Error ? e.message : 'The report could not be written.'
+    } finally {
+      this.an.reportPending = false
+      this.renderAnalyst()
+    }
+  }
+
   private renderModal(): void {
     const body = this.els.modalBody
     switch (this.modal) {
@@ -370,9 +572,12 @@ export class Ui {
       case 'journal': body.innerHTML = this.journalHtml(); break
       case 'confirm': body.innerHTML = `<h2>Confirm</h2><p>${esc(this.confirmText)}</p><div class="row end"><button data-act="no">Cancel</button><button class="primary" data-act="yes">Confirm</button></div>`; break
       case 'complete': body.innerHTML = this.completeHtml(); break
+      case 'account': body.innerHTML = this.cloud ? accountHtml(this.cloud, this.acct) : ''; break
+      case 'conflict': body.innerHTML = this.cloud ? conflictHtml(this.cloud) : ''; break
+      case 'analyst': this.renderAnalyst(); return
       default: body.innerHTML = ''
     }
-    body.classList.toggle('wide', this.modal === 'journal' || this.modal === 'about')
+    body.classList.toggle('wide', this.modal === 'journal' || this.modal === 'about' || this.modal === 'account' || this.modal === 'conflict')
     const first = body.querySelector<HTMLElement>('button.primary, button')
     if (this.modal === 'confirm') first?.focus()
   }
@@ -465,7 +670,7 @@ ${check('hints', 'Show on-screen key hints', s.hints)}
 <div class="jread"><div class="label">Scanner readings${rec ? ` - logged at ${Math.floor(rec.at / 60)}:${String(rec.at % 60).padStart(2, '0')} of play` : ''}</div>${rec.readings.map(([k, v]) => `<div class="rrow"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div></div>`
     }
     const hints = DISCOVERIES.filter(d => !found.has(d.id)).slice(0, 3).map(d => `<li>${esc(d.hint)}</li>`).join('')
-    return `<div class="jhead"><h2>Field journal</h2><span class="muted">${found.size} of ${DISCOVERIES.length} logged</span><span class="grow"></span><button class="primary" data-act="close">Close <small>J</small></button></div>
+    return `<div class="jhead"><h2>Field journal</h2><span class="muted">${found.size} of ${DISCOVERIES.length} logged</span><span class="grow"></span><button data-act="analyst">Ask the Analyst</button><button class="primary" data-act="close">Close <small>J</small></button></div>
 <div class="jbody"><div class="jlist">${list}</div><div class="jright">${detail}${hints ? `<div class="jhints"><div class="label">Leads</div><ul>${hints}</ul></div>` : ''}</div></div>`
   }
 

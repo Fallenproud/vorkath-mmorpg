@@ -10,6 +10,8 @@ export type Stage = (typeof STAGES)[number]
 
 export interface Progress {
   version: 2
+  /** Identifies one playthrough. Cloud run records are keyed by it; a New Game creates a new id. */
+  runId: string
   stage: Stage
   /** Discovery id -> play seconds at which it was logged, plus the readings captured at that moment. */
   discoveries: Record<string, { at: number; readings: [string, string][] }>
@@ -32,8 +34,11 @@ export interface Progress {
   completed: boolean
 }
 
+/** Short, URL-safe, unique enough for one account's runs (not a security token). */
+export const newRunId = (): string => `r_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+
 export const defaultProgress = (): Progress => ({
-  version: 2, stage: 'arrival', discoveries: {}, shardsFound: [], shards: 0, nodes: [false, false, false], oreFound: [],
+  version: 2, runId: newRunId(), stage: 'arrival', discoveries: {}, shardsFound: [], shards: 0, nodes: [false, false, false], oreFound: [],
   stabilized: false, vitality: 0, eco: defaultEco(), ecoTiles: '', tutorial: { moved: false, sprinted: false, jumped: false }, pos: null, yaw: 0, playTime: 0, completed: false,
 })
 
@@ -68,7 +73,7 @@ export function parseProgress(raw: unknown): Progress | null {
   const eco = parseEco(r.eco, stabilized ? { stage: 3, lastEvent: 1 } : defaultEco())
   if (!stabilized) eco.stage = 0
   const out: Progress = {
-    ...d, stage, discoveries: disc, shardsFound: ids(r.shardsFound), nodes, oreFound: ids(r.oreFound), stabilized,
+    ...d, runId: typeof r.runId === 'string' && /^[A-Za-z0-9_-]{6,40}$/.test(r.runId) ? r.runId : newRunId(), stage, discoveries: disc, shardsFound: ids(r.shardsFound), nodes, oreFound: ids(r.oreFound), stabilized,
     vitality: stabilized ? num(r.vitality, 0, 1, 0) : 0, eco,
     ecoTiles: typeof r.ecoTiles === 'string' && r.ecoTiles.length < 16000 && /^[A-Za-z0-9+/=]*$/.test(r.ecoTiles) ? r.ecoTiles : '',
     tutorial: { moved: t.moved === true, sprinted: t.sprinted === true, jumped: t.jumped === true },
